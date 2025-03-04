@@ -1,0 +1,177 @@
+# Bazel
+bazel-*
+
+# rust
+target/
+
+# Temporary files
+*.pyc
+*.swp
+*.swo
+
+# Generated files
+*.result
+py_proto
+
+# Eclipse IDE files
+.project
+.cproject
+.settings
+.classpath
+
+# IntelliJ files
+.idea
+
+# VS Code files
+# .vscode
+
+# Atom IDE files
+*.gch
+
+# Logs
+nohup.out
+*.bak
+*.stderr
+*.stdout
+
+# Editor configs
+.ycm_extra_conf.py
+
+# Data
+/data
+modules/tools/ota/update.ini
+modules/tools/ota/vehicle_info.pb.txt
+docker/build/syspkgs.txt
+
+# Localization
+modules/localization/msf/local_map/test_data/ndt_map/map_data
+
+# Doxygen
+cyber/doxy-docs/build
+cyber/doxy-docs/xml
+
+# Esd can lib
+bazel/third_party/can_card_library/esd_can/include
+bazel/third_party/can_card_library/esd_can/lib
+
+# Map data files
+modules/map/data
+
+# python proto
+*_pb2.py
+
+# calibration files
+modules/calibration/data
+
+# Data bag
+docs/demo_guide/*.bag
+docs/demo_guide/*.record
+
+# Bash Environment
+.dev_bash_hist
+
+# bazel cache and others
+.cache/
+.apollo.bazelrc
+.errors.log
+
+# Directory for binary distribution
+output
+
+# Flamegraph files
+tools/FlameGraph
+
+# jetbrain profiler
+.DS_Store
+
+#WORKSPACE
+*.deb
+.clwb
+core
+perception/production/
+
+
+
+## File system
+.DS_Store
+desktop.ini
+
+## Editor
+*.swp
+*.swo
+Session.vim
+.cproject
+.idea
+*.iml
+.vscode
+.project
+.favorites.json
+.settings/
+.vs/
+
+## Tool
+.valgrindrc
+.cargo
+# Included because it is part of the test case
+!/tests/run-make/thumb-none-qemu/example/.cargo
+
+## Configuration
+/config.toml
+/Makefile
+config.mk
+config.stamp
+no_llvm_build
+
+## Build
+/dl/
+/doc/
+/inst/
+/llvm/
+/mingw-build/
+# build/
+!/compiler/rustc_mir_build/src/build/
+/build-rust-analyzer/
+/dist/
+/unicode-downloads
+/target
+/src/bootstrap/target
+/src/tools/x/target
+# Created by default with `src/ci/docker/run.sh`
+/obj/
+
+## Temporary files
+*~
+\#*
+\#*\#
+.#*
+
+## Tags
+tags
+tags.*
+TAGS
+TAGS.*
+
+## Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+## Node
+node_modules
+package-lock.json
+
+
+## Rustdoc GUI tests
+tests/rustdoc-gui/src/**.lock
+
+# Before adding new lines, see the comment at the top.
+
+*.mcap
+
+#MODULE.bazel
+MODULE.bazel.lock
+vcandump1.log
+can_data/
+av/maps/API_KEY
+*.env
+falconview/build
