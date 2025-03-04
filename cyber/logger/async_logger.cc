@@ -58,7 +58,7 @@ void AsyncLogger::Stop() {
 }
 
 void AsyncLogger::Write(bool force_flush, time_t timestamp, const char* message,
-                        int message_len) {
+                        size_t message_len) {
   if (cyber_unlikely(state_.load(std::memory_order_acquire) != RUNNING)) {
     // std::cout << "Async Logger not running!" << std::endl;
     return;

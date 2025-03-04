@@ -202,7 +202,7 @@ bool LogFileObject::CreateLogfile(const string& time_pid_string) {
 }
 
 void LogFileObject::Write(bool force_flush, time_t timestamp,
-                          const char* message, int message_len) {
+                          const char* message, size_t message_len) {
   std::lock_guard<std::mutex> lock(lock_);
 
   // We don't log if the base_name_ is "" (which means "don't write")

@@ -248,22 +248,19 @@ const Descriptor* ProtobufFactory::FindMessageTypeByFile(
   return descriptor;
 }
 
-void ErrorCollector::AddError(const std::string& filename,
-                              const std::string& element_name,
-                              const google::protobuf::Message* descriptor,
-                              ErrorLocation location,
-                              const std::string& message) {
+  void ErrorCollector::RecordError(absl::string_view filename,
+                               absl::string_view element_name,
+                               const google::protobuf::Message* descriptor, ErrorLocation location,
+                               absl::string_view message) {
   UNUSED(element_name);
   UNUSED(descriptor);
   UNUSED(location);
   AWARN << "[" << filename << "] " << message;
 }
 
-void ErrorCollector::AddWarning(const std::string& filename,
-                                const std::string& element_name,
-                                const google::protobuf::Message* descriptor,
-                                ErrorLocation location,
-                                const std::string& message) {
+  void ErrorCollector::RecordWarning(const std::string& filename, const std::string& element_name,
+                      const google::protobuf::Message* descriptor,
+                      ErrorLocation location, const std::string& message) {
   UNUSED(element_name);
   UNUSED(descriptor);
   UNUSED(location);

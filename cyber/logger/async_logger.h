@@ -102,7 +102,7 @@ class AsyncLogger : public google::base::Logger {
    * @param message_len is the length of message
    */
   void Write(bool force_flush, time_t timestamp, const char* message,
-             int message_len) override;
+             size_t message_len) override;
 
   /**
    * @brief Flush any buffered messages.

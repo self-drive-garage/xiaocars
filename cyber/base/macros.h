@@ -20,7 +20,10 @@
 #include <cstdlib>
 #include <new>
 
-#define eprosima eprosima_wrap
+#ifndef eprosima_wrap
+#define eprosima_wrap eprosima // Example: Define it to itself if not already defined
+#endif
+
 
 #if __GNUC__ >= 3
 #define cyber_likely(x) (__builtin_expect((x), 1))
