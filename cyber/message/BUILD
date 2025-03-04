@@ -32,7 +32,7 @@ cc_library(
     ],
     deps = [
         "//cyber/common:cyber_common",
-        #"//cyber/proto:proto_desc_cc_proto",
+        "//cyber/proto:proto_desc_cc_proto",
     ],
 )
 
@@ -42,7 +42,7 @@ cc_test(
     srcs = ["message_traits_test.cc"],
     deps = [
         "//cyber",
-        ##"//cyber/proto:unit_test_cc_proto",
+        #"//cyber/proto:unit_test_cc_proto",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -63,7 +63,7 @@ cc_test(
     srcs = ["protobuf_factory_test.cc"],
     deps = [
         "//cyber",
-        ##"//cyber/proto:unit_test_cc_proto",
+        #"//cyber/proto:unit_test_cc_proto",
         "@com_google_googletest//:gtest_main",
     ],
 )

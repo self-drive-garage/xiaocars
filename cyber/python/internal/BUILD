@@ -30,7 +30,7 @@ cc_test(
     srcs = ["py_cyber_test.cc"],
     deps = [
         ":py_cyber",
-        ##"//cyber/proto:unit_test_cc_proto",
+        #"//cyber/proto:unit_test_cc_proto",
         "@com_google_googletest//:gtest",
     ],
     linkstatic = True,
@@ -64,7 +64,7 @@ cc_test(
     srcs = ["py_record_test.cc"],
     deps = [
         ":py_record",
-        ##"//cyber/proto:unit_test_cc_proto",
+        #"//cyber/proto:unit_test_cc_proto",
         "@com_google_googletest//:gtest_main",
     ],
     linkstatic = True,

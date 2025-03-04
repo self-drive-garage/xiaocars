@@ -28,7 +28,7 @@ cc_library(
     ],
     deps = [
         "//cyber/common:cyber_common",
-        #"//cyber/proto:record_cc_proto",
+        "//cyber/proto:record_cc_proto",
         "//cyber/time:cyber_time",
         "@com_google_protobuf//:protobuf",
         "//cyber/message:cyber_message",
@@ -42,7 +42,7 @@ cc_test(
     srcs = ["file/record_file_test.cc"],
     deps = [
         "//cyber",
-        #"//cyber/proto:record_cc_proto",
+        "//cyber/proto:record_cc_proto",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -58,7 +58,7 @@ cc_test(
     ],
     deps = [
         "//cyber",
-        #"//cyber/proto:record_cc_proto",
+        "//cyber/proto:record_cc_proto",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -69,7 +69,7 @@ cc_test(
     srcs = ["record_reader_test.cc"],
     deps = [
         "//cyber",
-        #"//cyber/proto:record_cc_proto",
+        "//cyber/proto:record_cc_proto",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -80,7 +80,7 @@ cc_test(
     srcs = ["record_viewer_test.cc"],
     deps = [
         "//cyber",
-        #"//cyber/proto:record_cc_proto",
+        "//cyber/proto:record_cc_proto",
         "@com_google_googletest//:gtest_main",
     ],
 )

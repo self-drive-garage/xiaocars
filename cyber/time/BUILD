@@ -20,7 +20,7 @@ cc_library(
     deps = [
         "//cyber/common:cyber_common",
         "//cyber/base:cyber_base",
-        #"//cyber/proto:run_mode_conf_cc_proto",
+        "//cyber/proto:run_mode_conf_cc_proto",
     ],
 )
 

@@ -18,7 +18,7 @@ cc_library(
     ],
     deps = [
         "//cyber/message:cyber_message",
-        #"//cyber/proto:parameter_cc_proto",
+        "//cyber/proto:parameter_cc_proto",
         "//cyber/node:cyber_node",
         "//cyber/service:cyber_service",
         "@fastdds",

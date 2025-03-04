@@ -30,7 +30,7 @@
 #include "cyber/croutine/routine_factory.h"
 #include "cyber/data/data_visitor.h"
 #include "cyber/scheduler/scheduler.h"
-#include "cyber/statistics/statistics.h"
+//#include "cyber/statistics/statistics.h"
 #include "cyber/time/time.h"
 
 namespace apollo {
@@ -200,14 +200,14 @@ bool Component<M0, NullType, NullType, NullType>::Initialize(
     auto end_time = Time::Now().ToMicrosecond();
     // sampling proc latency and cyber latency in microsecond
     uint64_t process_start_time;
-    statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
-        *role_attr, end_time - start_time);
-    if (statistics::Statistics::Instance()->GetProcStatus(
-            *role_attr, &process_start_time) &&
-        (start_time - process_start_time) > 0) {
-      statistics::Statistics::Instance()->SamplingCyberLatency(
-          *role_attr, start_time - process_start_time);
-    }
+    // statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
+        // *role_attr, end_time - start_time);
+    // if (statistics::Statistics::Instance()->GetProcStatus(
+    //         *role_attr, &process_start_time) &&
+    //     (start_time - process_start_time) > 0) {
+    //   statistics::Statistics::Instance()->SamplingCyberLatency(
+    //       *role_attr, start_time - process_start_time);
+    // }
   };
 
   std::shared_ptr<Reader<M0>> reader = nullptr;
@@ -301,12 +301,12 @@ bool Component<M0, M1, NullType, NullType>::Initialize(
           uint64_t process_start_time;
           statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
               *role_attr, end_time - start_time);
-          if (statistics::Statistics::Instance()->GetProcStatus(
-                  *role_attr, &process_start_time) &&
-              (start_time - process_start_time) > 0) {
-            statistics::Statistics::Instance()->SamplingCyberLatency(
-                *role_attr, start_time - process_start_time);
-          }
+          // if (statistics::Statistics::Instance()->GetProcStatus(
+          //         *role_attr, &process_start_time) &&
+          //     (start_time - process_start_time) > 0) {
+          //   statistics::Statistics::Instance()->SamplingCyberLatency(
+          //       *role_attr, start_time - process_start_time);
+          // }
         }
       } else {
         AERROR << "Component object has been destroyed.";
@@ -340,12 +340,12 @@ bool Component<M0, M1, NullType, NullType>::Initialize(
       uint64_t process_start_time;
       statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
           *role_attr, end_time - start_time);
-      if (statistics::Statistics::Instance()->GetProcStatus(
-              *role_attr, &process_start_time) &&
-          (start_time - process_start_time) > 0) {
-        statistics::Statistics::Instance()->SamplingCyberLatency(
-            *role_attr, start_time - process_start_time);
-      }
+      // if (statistics::Statistics::Instance()->GetProcStatus(
+      //         *role_attr, &process_start_time) &&
+      //     (start_time - process_start_time) > 0) {
+      //   statistics::Statistics::Instance()->SamplingCyberLatency(
+      //       *role_attr, start_time - process_start_time);
+      // }
     } else {
       AERROR << "Component object has been destroyed.";
     }
@@ -437,12 +437,12 @@ bool Component<M0, M1, M2, NullType>::Initialize(
           uint64_t process_start_time;
           statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
               *role_attr, end_time - start_time);
-          if (statistics::Statistics::Instance()->GetProcStatus(
-                  *role_attr, &process_start_time) &&
-              (start_time - process_start_time) > 0) {
-            statistics::Statistics::Instance()->SamplingCyberLatency(
-                *role_attr, start_time - process_start_time);
-          }
+          // if (statistics::Statistics::Instance()->GetProcStatus(
+          //         *role_attr, &process_start_time) &&
+          //     (start_time - process_start_time) > 0) {
+          //   statistics::Statistics::Instance()->SamplingCyberLatency(
+          //       *role_attr, start_time - process_start_time);
+          // }
         }
       } else {
         AERROR << "Component object has been destroyed.";
@@ -480,12 +480,12 @@ bool Component<M0, M1, M2, NullType>::Initialize(
       uint64_t process_start_time;
       statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
           *role_attr, end_time - start_time);
-      if (statistics::Statistics::Instance()->GetProcStatus(
-              *role_attr, &process_start_time) &&
-          (start_time - process_start_time) > 0) {
-        statistics::Statistics::Instance()->SamplingCyberLatency(
-            *role_attr, start_time - process_start_time);
-      }
+      // if (statistics::Statistics::Instance()->GetProcStatus(
+      //         *role_attr, &process_start_time) &&
+      //     (start_time - process_start_time) > 0) {
+      //   statistics::Statistics::Instance()->SamplingCyberLatency(
+      //       *role_attr, start_time - process_start_time);
+      // }
     } else {
       AERROR << "Component object has been destroyed.";
     }
@@ -587,12 +587,12 @@ bool Component<M0, M1, M2, M3>::Initialize(const ComponentConfig& config) {
           uint64_t process_start_time;
           statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
               *role_attr, end_time - start_time);
-          if (statistics::Statistics::Instance()->GetProcStatus(
-                  *role_attr, &process_start_time) &&
-              (start_time - process_start_time) > 0) {
-            statistics::Statistics::Instance()->SamplingCyberLatency(
-                *role_attr, start_time - process_start_time);
-          }
+          // if (statistics::Statistics::Instance()->GetProcStatus(
+          //         *role_attr, &process_start_time) &&
+          //     (start_time - process_start_time) > 0) {
+          //   statistics::Statistics::Instance()->SamplingCyberLatency(
+          //       *role_attr, start_time - process_start_time);
+          // }
         }
       } else {
         AERROR << "Component object has been destroyed.";
@@ -632,12 +632,12 @@ bool Component<M0, M1, M2, M3>::Initialize(const ComponentConfig& config) {
       uint64_t process_start_time;
       statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
           *role_attr, end_time - start_time);
-      if (statistics::Statistics::Instance()->GetProcStatus(
-              *role_attr, &process_start_time) &&
-          (start_time - process_start_time) > 0) {
-        statistics::Statistics::Instance()->SamplingCyberLatency(
-            *role_attr, start_time - process_start_time);
-      }
+      // if (statistics::Statistics::Instance()->GetProcStatus(
+      //         *role_attr, &process_start_time) &&
+      //     (start_time - process_start_time) > 0) {
+      //   statistics::Statistics::Instance()->SamplingCyberLatency(
+      //       *role_attr, start_time - process_start_time);
+      // }
     } else {
       AERROR << "Component object has been destroyed." << std::endl;
     }

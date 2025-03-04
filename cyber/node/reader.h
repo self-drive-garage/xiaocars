@@ -35,7 +35,7 @@
 #include "cyber/node/reader_base.h"
 #include "cyber/scheduler/scheduler_factory.h"
 #include "cyber/service_discovery/topology_manager.h"
-#include "cyber/statistics/statistics.h"
+//#include "cyber/statistics/statistics.h"
 #include "cyber/time/time.h"
 #include "cyber/transport/transport.h"
 
@@ -260,10 +260,10 @@ bool Reader<MessageT>::Init() {
   if (init_.exchange(true)) {
     return true;
   }
-  auto statistics_center = statistics::Statistics::Instance();
-  if (!statistics_center->RegisterChanVar(role_attr_)) {
-    AWARN << "Failed to register reader var!";
-  }
+  // auto statistics_center = statistics::Statistics::Instance();
+  // if (!statistics_center->RegisterChanVar(role_attr_)) {
+  //   AWARN << "Failed to register reader var!";
+  // }
   std::function<void(const std::shared_ptr<MessageT>&)> func;
   if (reader_func_ != nullptr) {
     func = [this](const std::shared_ptr<MessageT>& msg) {
@@ -278,16 +278,16 @@ bool Reader<MessageT>::Init() {
       proc_start_time =
           static_cast<uint64_t>(latest_recv_time_sec_ * 1000000UL);
 
-      statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
-          this->role_attr_, (proc_done_time - proc_start_time));
-      if (statistics::Statistics::Instance()->GetProcStatus(
-              this->role_attr_, &process_start_time)) {
-        auto cyber_latency = proc_start_time - process_start_time;
-        if (process_start_time > 0 && cyber_latency > 0) {
-          statistics::Statistics::Instance()->SamplingCyberLatency(
-              this->role_attr_, cyber_latency);
-        }
-      }
+      // statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
+      //     this->role_attr_, (proc_done_time - proc_start_time));
+      // if (statistics::Statistics::Instance()->GetProcStatus(
+      //         this->role_attr_, &process_start_time)) {
+      //   auto cyber_latency = proc_start_time - process_start_time;
+      //   if (process_start_time > 0 && cyber_latency > 0) {
+      //     statistics::Statistics::Instance()->SamplingCyberLatency(
+      //         this->role_attr_, cyber_latency);
+      //   }
+      // }
     };
   } else {
     func = [this](const std::shared_ptr<MessageT>& msg) { this->Enqueue(msg); };

@@ -43,7 +43,7 @@ cc_binary(
     srcs = ["record.cc"],
     deps = [
         "//cyber",
-        #"//cyber/proto:record_cc_proto",
+        "//cyber/proto:record_cc_proto",
     ],
 )
 

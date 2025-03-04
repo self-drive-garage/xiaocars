@@ -22,7 +22,7 @@
 #include <string>
 
 #include "cyber/event/perf_event_cache.h"
-#include "cyber/statistics/statistics.h"
+//#include "cyber/statistics/statistics.h"
 #include "cyber/transport/common/endpoint.h"
 #include "cyber/transport/message/message_info.h"
 
@@ -68,8 +68,8 @@ template <typename M>
 Transmitter<M>::Transmitter(const RoleAttributes& attr) : Endpoint(attr) {
   msg_info_.set_sender_id(this->id_);
   msg_info_.set_seq_num(0);
-  seq_num_ =
-      statistics::Statistics::Instance()->CreateAdder<int>(Endpoint::attr_);
+  // seq_num_ =
+  //     statistics::Statistics::Instance()->CreateAdder<int>(Endpoint::attr_);
 }
 
 template <typename M>

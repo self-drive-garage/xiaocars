@@ -23,7 +23,7 @@
 
 #include "cyber/common/log.h"
 #include "cyber/message/message_traits.h"
-#include "cyber/statistics/statistics.h"
+//#include "cyber/statistics/statistics.h"
 #include "cyber/time/time.h"
 #include "cyber/transport/dispatcher/subscriber_listener.h"
 #include "cyber/transport/rtps/attributes_filler.h"

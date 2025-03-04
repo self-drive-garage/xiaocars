@@ -34,9 +34,9 @@ cc_library(
         "//cyber/data:cyber_data",
         "//cyber/common:cyber_common",
         "//cyber/time:cyber_time", 
-        ##"//cyber/proto:component_conf_cc_proto",
-        #"//cyber/proto:choreography_conf_cc_proto",
-        #"//cyber/proto:classic_conf_cc_proto",
+        #"//cyber/proto:component_conf_cc_proto",
+        "//cyber/proto:choreography_conf_cc_proto",
+        "//cyber/proto:classic_conf_cc_proto",
     ],
 )
 

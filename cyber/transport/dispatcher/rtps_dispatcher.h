@@ -27,7 +27,7 @@
 #include "cyber/common/log.h"
 #include "cyber/common/macros.h"
 #include "cyber/message/message_traits.h"
-#include "cyber/statistics/statistics.h"
+//#include "cyber/statistics/statistics.h"
 #include "cyber/time/time.h"
 #include "cyber/transport/dispatcher/dispatcher.h"
 #include "cyber/transport/dispatcher/subscriber_listener.h"
@@ -97,10 +97,10 @@ void RtpsDispatcher::AddListener(const RoleAttributes& self_attr,
     } else {
       uint64_t diff = recv_time - send_time;
       // sample transport latency in microsecond
-      statistics::Statistics::Instance()->SamplingTranLatency<uint64_t>(
-          self_attr, diff);
+      // statistics::Statistics::Instance()->SamplingTranLatency<uint64_t>(
+      //     self_attr, diff);
     }
-    statistics::Statistics::Instance()->SetProcStatus(self_attr, recv_time);
+    // statistics::Statistics::Instance()->SetProcStatus(self_attr, recv_time);
     listener(msg, msg_info);
   };
 
@@ -125,10 +125,10 @@ void RtpsDispatcher::AddListener(const RoleAttributes& self_attr,
     } else {
       uint64_t diff = recv_time - send_time;
       // sample transport latency in microsecond
-      statistics::Statistics::Instance()->SamplingTranLatency<uint64_t>(
-          self_attr, diff);
+      // statistics::Statistics::Instance()->SamplingTranLatency<uint64_t>(
+      //     self_attr, diff);
     }
-    statistics::Statistics::Instance()->SetProcStatus(self_attr, recv_time);
+    // statistics::Statistics::Instance()->SetProcStatus(self_attr, recv_time);
     listener(msg, msg_info);
   };
 

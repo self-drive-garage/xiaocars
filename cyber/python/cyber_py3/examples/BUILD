@@ -7,7 +7,7 @@ package(default_visibility = ["//visibility:public"])
 #     name = "py_record",
 #     srcs = ["py_record.py"],
 #     deps = [
-#         #"//cyber/proto:unit_test_py_pb2",
+#         "//cyber/proto:unit_test_py_pb2",
 #         "//cyber/python/cyber_py3:record",
 #         "//modules/common_msgs/basic_msgs:error_code_py_pb2",
 #         "//modules/common_msgs/basic_msgs:header_py_pb2",
@@ -36,7 +36,7 @@ py_binary(
     name = "py_talker",
     srcs = ["py_talker.py"],
     deps = [
-        #"//cyber/proto:unit_test_py_pb2",
+        "//cyber/proto:unit_test_py_pb2",
         "//cyber/python/cyber_py3:cyber",
     ],
 )
@@ -45,7 +45,7 @@ py_binary(
     name = "py_listener",
     srcs = ["py_listener.py"],
     deps = [
-        #"//cyber/proto:unit_test_py_pb2",
+        "//cyber/proto:unit_test_py_pb2",
         "//cyber/python/cyber_py3:cyber",
     ],
 )
@@ -63,7 +63,7 @@ py_binary(
     name = "py_service",
     srcs = ["py_service.py"],
     deps = [
-        #"//cyber/proto:unit_test_py_pb2",
+        "//cyber/proto:unit_test_py_pb2",
         "//cyber/python/cyber_py3:cyber",
     ],
 )
@@ -72,7 +72,7 @@ py_binary(
     name = "py_client",
     srcs = ["py_client.py"],
     deps = [
-        #"//cyber/proto:unit_test_py_pb2",
+        "//cyber/proto:unit_test_py_pb2",
         "//cyber/python/cyber_py3:cyber",
     ],
 )
@@ -90,7 +90,7 @@ py_binary(
     name = "py_record_channel_info",
     srcs = ["py_record_channel_info.py"],
     deps = [
-        #"//cyber/proto:record_py_pb2",
+        "//cyber/proto:record_py_pb2",
         "//cyber/python/cyber_py3:cyber",
         "//cyber/python/cyber_py3:record",
     ],

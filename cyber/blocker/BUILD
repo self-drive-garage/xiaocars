@@ -9,8 +9,8 @@ cc_library(
         "blocker_manager.cc",
     ],
     hdrs = [
-        "blocker_manager.h",
         "blocker.h",
+        "blocker_manager.h",
         "intra_reader.h",
         "intra_writer.h",
     ],
@@ -22,7 +22,7 @@ cc_test(
     srcs = ["blocker_manager_test.cc"],
     deps = [
         "//cyber",
-        ##"//cyber/proto:unit_test_cc_proto",
+        #"//cyber/proto:unit_test_cc_proto",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -33,7 +33,7 @@ cc_test(
     srcs = ["blocker_test.cc"],
     deps = [
         "//cyber",
-        ##"//cyber/proto:unit_test_cc_proto",
+        #"//cyber/proto:unit_test_cc_proto",
         "@com_google_googletest//:gtest_main",
     ],
 )

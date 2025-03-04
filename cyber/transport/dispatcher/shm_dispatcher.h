@@ -30,7 +30,7 @@
 #include "cyber/message/arena_message_wrapper.h"
 #include "cyber/message/message_traits.h"
 #include "cyber/message/raw_message.h"
-#include "cyber/statistics/statistics.h"
+//#include "cyber/statistics/statistics.h"
 #include "cyber/time/time.h"
 #include "cyber/transport/dispatcher/dispatcher.h"
 #include "cyber/transport/shm/notifier_factory.h"
@@ -208,10 +208,10 @@ void ShmDispatcher::AddListener(const RoleAttributes& self_attr,
 
       auto send_time = msg_info.send_time();
 
-      statistics::Statistics::Instance()->AddRecvCount(self_attr,
-                                                       msg_info.seq_num());
-      statistics::Statistics::Instance()->SetTotalMsgsStatus(
-          self_attr, msg_info.seq_num());
+      // statistics::Statistics::Instance()->AddRecvCount(self_attr,
+      //                                                  msg_info.seq_num());
+      // statistics::Statistics::Instance()->SetTotalMsgsStatus(
+      //     self_attr, msg_info.seq_num());
 
       auto recv_time = Time::Now().ToNanosecond();
 
@@ -219,11 +219,11 @@ void ShmDispatcher::AddListener(const RoleAttributes& self_attr,
       auto tran_diff = (recv_time - send_time) / 1000;
       if (tran_diff > 0) {
         // sample transport latency in microsecond
-        statistics::Statistics::Instance()->SamplingTranLatency<uint64_t>(
-            self_attr, tran_diff);
+        // statistics::Statistics::Instance()->SamplingTranLatency<uint64_t>(
+        //     self_attr, tran_diff);
       }
-      statistics::Statistics::Instance()->SetProcStatus(self_attr,
-                                                        recv_time / 1000);
+      // statistics::Statistics::Instance()->SetProcStatus(self_attr,
+      //                                                   recv_time / 1000);
       listener(msg, msg_info);
       auto related_blocks =
           arena_manager->GetMessageRelatedBlocks(msg_wrapper.get());
@@ -245,10 +245,10 @@ void ShmDispatcher::AddListener(const RoleAttributes& self_attr,
 
       auto send_time = msg_info.send_time();
 
-      statistics::Statistics::Instance()->AddRecvCount(self_attr,
-                                                       msg_info.seq_num());
-      statistics::Statistics::Instance()->SetTotalMsgsStatus(
-          self_attr, msg_info.seq_num());
+      // statistics::Statistics::Instance()->AddRecvCount(self_attr,
+      //                                                  msg_info.seq_num());
+      // statistics::Statistics::Instance()->SetTotalMsgsStatus(
+      //     self_attr, msg_info.seq_num());
 
       auto recv_time = Time::Now().ToNanosecond();
 
@@ -256,11 +256,11 @@ void ShmDispatcher::AddListener(const RoleAttributes& self_attr,
       auto tran_diff = (recv_time - send_time) / 1000;
       if (tran_diff > 0) {
         // sample transport latency in microsecond
-        statistics::Statistics::Instance()->SamplingTranLatency<uint64_t>(
-            self_attr, tran_diff);
+        // statistics::Statistics::Instance()->SamplingTranLatency<uint64_t>(
+        //     self_attr, tran_diff);
       }
-      statistics::Statistics::Instance()->SetProcStatus(self_attr,
-                                                        recv_time / 1000);
+      // statistics::Statistics::Instance()->SetProcStatus(self_attr,
+      //                                                   recv_time / 1000);
       listener(msg, msg_info);
     };
 
@@ -322,21 +322,21 @@ void ShmDispatcher::AddListener(const RoleAttributes& self_attr,
 
       auto send_time = msg_info.send_time();
 
-      statistics::Statistics::Instance()->AddRecvCount(self_attr,
-                                                       msg_info.seq_num());
-      statistics::Statistics::Instance()->SetTotalMsgsStatus(
-          self_attr, msg_info.seq_num());
+      // statistics::Statistics::Instance()->AddRecvCount(self_attr,
+      //                                                  msg_info.seq_num());
+      // statistics::Statistics::Instance()->SetTotalMsgsStatus(
+      //     self_attr, msg_info.seq_num());
 
       auto recv_time = Time::Now().ToNanosecond();
 
       // sampling in microsecond
       auto tran_diff = (recv_time - send_time) / 1000;
       if (tran_diff > 0) {
-        statistics::Statistics::Instance()->SamplingTranLatency<uint64_t>(
-            self_attr, tran_diff);
+        // statistics::Statistics::Instance()->SamplingTranLatency<uint64_t>(
+        //     self_attr, tran_diff);
       }
-      statistics::Statistics::Instance()->SetProcStatus(self_attr,
-                                                        recv_time / 1000);
+      // statistics::Statistics::Instance()->SetProcStatus(self_attr,
+      //                                                   recv_time / 1000);
 
       listener(msg, msg_info);
       auto related_blocks =
@@ -359,20 +359,20 @@ void ShmDispatcher::AddListener(const RoleAttributes& self_attr,
       auto send_time = msg_info.send_time();
       auto msg_seq_num = msg_info.seq_num();
 
-      statistics::Statistics::Instance()->AddRecvCount(self_attr, msg_seq_num);
-      statistics::Statistics::Instance()->SetTotalMsgsStatus(self_attr,
-                                                             msg_seq_num);
+      // statistics::Statistics::Instance()->AddRecvCount(self_attr, msg_seq_num);
+      // statistics::Statistics::Instance()->SetTotalMsgsStatus(self_attr,
+      //                                                        msg_seq_num);
 
       auto recv_time = Time::Now().ToNanosecond();
 
       // sampling in microsecond
       auto tran_diff = (recv_time - send_time) / 1000;
       if (tran_diff > 0) {
-        statistics::Statistics::Instance()->SamplingTranLatency<uint64_t>(
-            self_attr, tran_diff);
+        // statistics::Statistics::Instance()->SamplingTranLatency<uint64_t>(
+        //     self_attr, tran_diff);
       }
-      statistics::Statistics::Instance()->SetProcStatus(self_attr,
-                                                        recv_time / 1000);
+      // statistics::Statistics::Instance()->SetProcStatus(self_attr,
+      //                                                   recv_time / 1000);
 
       listener(msg, msg_info);
     };

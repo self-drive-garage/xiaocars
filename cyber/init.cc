@@ -40,7 +40,7 @@
 #include "cyber/node/node.h"
 #include "cyber/scheduler/scheduler.h"
 #include "cyber/service_discovery/topology_manager.h"
-#include "cyber/statistics/statistics.h"
+////#include "cyber/statistics/statistics.h"
 #include "cyber/sysmo/sysmo.h"
 #include "cyber/task/task.h"
 #include "cyber/time/clock.h"
@@ -150,7 +150,7 @@ bool Init(const char* binary_name, const std::string& dag_info) {
     }
     google::SetCommandLineOption("bvar_dump_file", dump_path.c_str());
   } else {
-    statistics::Statistics::Instance()->DisableChanVar();
+    // statistics::Statistics::Instance()->DisableChanVar();
   }
   google::SetCommandLineOption("bvar_dump_exclude", "*qps");
   google::SetCommandLineOption("bvar_dump", "true");

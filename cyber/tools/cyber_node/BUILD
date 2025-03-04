@@ -11,7 +11,7 @@ py_binary(
     srcs = ["cyber_node.py"],
     deps = [
         "//cyber/python/cyber_py3:cyber",
-        #"//cyber/proto:role_attributes_py_pb2"
+        "//cyber/proto:role_attributes_py_pb2"
     ],
 )
 

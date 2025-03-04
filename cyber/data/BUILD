@@ -16,7 +16,7 @@ cc_library(
         "fusion/data_fusion.h",
     ],
     deps = [
-        ##"//cyber/proto:component_conf_cc_proto",
+        #"//cyber/proto:component_conf_cc_proto",
     ],
 )
 

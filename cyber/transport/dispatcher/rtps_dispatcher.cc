@@ -17,7 +17,7 @@
 #include "cyber/transport/dispatcher/rtps_dispatcher.h"
 
 #include "cyber/common/log.h"
-#include "cyber/statistics/statistics.h"
+////#include "cyber/statistics/statistics.h"
 #include "cyber/transport/common/endpoint.h"
 #include "cyber/transport/dispatcher/dispatcher.h"
 
@@ -60,10 +60,10 @@ void RtpsDispatcher::AddSubscriber(const RoleAttributes& self_attr) {
   auto listener_adapter =
       [this, self_attr](const std::shared_ptr<std::string>& msg_str,
                         uint64_t channel_id, const MessageInfo& msg_info) {
-        statistics::Statistics::Instance()->AddRecvCount(self_attr,
-                                                         msg_info.seq_num());
-        statistics::Statistics::Instance()->SetTotalMsgsStatus(
-            self_attr, msg_info.seq_num());
+        // statistics::Statistics::Instance()->AddRecvCount(self_attr,
+        //                                                  msg_info.seq_num());
+        // statistics::Statistics::Instance()->SetTotalMsgsStatus(
+        //     self_attr, msg_info.seq_num());
         this->OnMessage(channel_id, msg_str, msg_info);
       };
 

@@ -29,7 +29,7 @@
 #include "cyber/common/macros.h"
 #include "cyber/message/message_traits.h"
 #include "cyber/message/raw_message.h"
-#include "cyber/statistics/statistics.h"
+//#include "cyber/statistics/statistics.h"
 #include "cyber/time/time.h"
 #include "cyber/transport/dispatcher/dispatcher.h"
 
@@ -364,7 +364,7 @@ void IntraDispatcher::AddListener(const RoleAttributes& self_attr,
                                 const std::shared_ptr<MessageT>& message,
                                 const MessageInfo& message_info) {
       auto recv_time = Time::Now().ToMicrosecond();
-      statistics::Statistics::Instance()->SetProcStatus(self_attr, recv_time);
+      // statistics::Statistics::Instance()->SetProcStatus(self_attr, recv_time);
       this->chain_->Run<MessageT>(self_id, channel_id, message_type, message,
                                   message_info);
     };
@@ -395,7 +395,7 @@ void IntraDispatcher::AddListener(const RoleAttributes& self_attr,
                                 const std::shared_ptr<MessageT>& message,
                                 const MessageInfo& message_info) {
       auto recv_time = Time::Now().ToMicrosecond();
-      statistics::Statistics::Instance()->SetProcStatus(self_attr, recv_time);
+      // statistics::Statistics::Instance()->SetProcStatus(self_attr, recv_time);
       this->chain_->Run<MessageT>(self_id, oppo_id, channel_id, message_type,
                                   message, message_info);
     };

@@ -35,11 +35,11 @@ cc_library(
         "//cyber/base:cyber_base",
         "//cyber/common:cyber_common",
         "//cyber:cyber_binary",
-        #"//cyber/proto:role_attributes_cc_proto",
+        "//cyber/proto:role_attributes_cc_proto",
         "//cyber:cyber_state",
         "//cyber/message:cyber_message",
-        #"//cyber/proto:proto_desc_cc_proto",
-        #"//cyber/proto:topology_change_cc_proto",
+        "//cyber/proto:proto_desc_cc_proto",
+        "//cyber/proto:topology_change_cc_proto",
         "//cyber/time:cyber_time",
     ],
 )
@@ -56,7 +56,7 @@ cc_library(
     deps = [
         "//cyber:cyber_binary",
         "//cyber/common:cyber_common",
-        #"//cyber/proto:role_attributes_cc_proto",
+        "//cyber/proto:role_attributes_cc_proto",
     ],
 )
 
@@ -117,7 +117,7 @@ cc_test(
     srcs = ["specific_manager/channel_manager_test.cc"],
     deps = [
         "//cyber",
-        ##"//cyber/proto:unit_test_cc_proto",
+        #"//cyber/proto:unit_test_cc_proto",
         "@com_google_googletest//:gtest_main",
     ],
     linkstatic = True,

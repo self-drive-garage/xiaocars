@@ -7,12 +7,12 @@ cc_library(
     name = "cyber_class_loader",
     srcs = [
         "class_loader.cc",
-        "class_loader_manager.cc"
+        "class_loader_manager.cc",
     ],
     hdrs = [
         "class_loader.h",
+        "class_loader_manager.h",
         "class_loader_register_macro.h",
-        "class_loader_manager.h"
     ],
     deps = [
         "//cyber/class_loader/shared_library",
@@ -32,7 +32,7 @@ cc_library(
 #     deps = [
 #         "//cyber",
 #         "//cyber/class_loader/test:base",
-#         ##"//cyber/proto:unit_test_cc_proto",
+#         #"//cyber/proto:unit_test_cc_proto",
 #         "@com_google_googletest//:gtest",
 #     ],
 # )

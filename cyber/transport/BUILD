@@ -11,11 +11,11 @@ cc_library(
         "dispatcher/dispatcher.cc",
         "dispatcher/intra_dispatcher.cc",
         "dispatcher/rtps_dispatcher.cc",
-        "dispatcher/subscriber_listener.cc",
         "dispatcher/shm_dispatcher.cc",
+        "dispatcher/subscriber_listener.cc",
         "message/message_info.cc",
+        "qos/qos_filler.cc",
         "qos/qos_profile_conf.cc",
-        "qos/qos_filler.cc", 
         "rtps/attributes_filler.cc",
         "rtps/participant.cc",
         "rtps/publisher.cc",
@@ -38,9 +38,9 @@ cc_library(
         "transport.cc",
     ],
     hdrs = [
+        "common/common_type.h",
         "common/endpoint.h",
         "common/identity.h",
-        "common/common_type.h",
         "dispatcher/dispatcher.h",
         "dispatcher/intra_dispatcher.h",
         "dispatcher/rtps_dispatcher.h",
@@ -50,8 +50,8 @@ cc_library(
         "message/history_attributes.h",
         "message/listener_handler.h",
         "message/message_info.h",
-        "qos/qos_profile_conf.h",
         "qos/qos_filler.h",
+        "qos/qos_profile_conf.h",
         "receiver/hybrid_receiver.h",
         "receiver/intra_receiver.h",
         "receiver/receiver.h",
@@ -59,8 +59,8 @@ cc_library(
         "receiver/shm_receiver.h",
         "rtps/attributes_filler.h",
         "rtps/participant.h",
-        "rtps/subscriber.h",
         "rtps/publisher.h",
+        "rtps/subscriber.h",
         "rtps/underlay_message.h",
         "rtps/underlay_message_type.h",
         "shm/arena_address_allocator.h",
@@ -90,13 +90,13 @@ cc_library(
         "//cyber/common:cyber_common",
         "//cyber/event:cyber_event",
         "//cyber/message:cyber_message",
-        #"//cyber/proto:proto_desc_cc_proto",
-        #"//cyber/proto:qos_profile_cc_proto",
-        #"//cyber/proto:role_attributes_cc_proto",
+        "//cyber/proto:proto_desc_cc_proto",
+        "//cyber/proto:qos_profile_cc_proto",
+        "//cyber/proto:role_attributes_cc_proto",
         "//cyber/scheduler:cyber_scheduler",
         "//cyber/service_discovery:cyber_service_discovery_role",
         "//cyber/service_discovery:subscriber_listener",
-        "//cyber/statistics:apollo_statistics",
+        #        "//cyber/statistics:apollo_statistics",
         "//cyber/task:cyber_task",
         "@fastdds",
         "@libuuid",
@@ -174,7 +174,7 @@ cc_test(
     srcs = ["transport_test.cc"],
     deps = [
         "//cyber",
-        ##"//cyber/proto:unit_test_cc_proto",
+        #"//cyber/proto:unit_test_cc_proto",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -185,7 +185,7 @@ cc_test(
     srcs = ["dispatcher/dispatcher_test.cc"],
     deps = [
         "//cyber",
-        ##"//cyber/proto:unit_test_cc_proto",
+        #"//cyber/proto:unit_test_cc_proto",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -196,7 +196,7 @@ cc_test(
     srcs = ["dispatcher/intra_dispatcher_test.cc"],
     deps = [
         "//cyber",
-        ##"//cyber/proto:unit_test_cc_proto",
+        #"//cyber/proto:unit_test_cc_proto",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -207,7 +207,7 @@ cc_test(
     srcs = ["dispatcher/rtps_dispatcher_test.cc"],
     deps = [
         "//cyber",
-        ##"//cyber/proto:unit_test_cc_proto",
+        #"//cyber/proto:unit_test_cc_proto",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -218,7 +218,7 @@ cc_test(
     srcs = ["dispatcher/shm_dispatcher_test.cc"],
     deps = [
         "//cyber",
-        ##"//cyber/proto:unit_test_cc_proto",
+        #"//cyber/proto:unit_test_cc_proto",
         "@com_google_googletest//:gtest_main",
     ],
 )

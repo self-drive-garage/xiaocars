@@ -16,7 +16,7 @@ cc_binary(
     deps = [
         ":recorder",
         "//cyber",
-        #"//cyber/proto:record_cc_proto",
+        "//cyber/proto:record_cc_proto",
     ],
 )
 
@@ -37,7 +37,7 @@ cc_library(
     deps = [
         "//cyber",
         "//cyber/common:cyber_common",
-        #"//cyber/proto:record_cc_proto",
+        "//cyber/proto:record_cc_proto",
         "@fastdds",
     ],
 )

@@ -31,6 +31,8 @@
 
 #include "google/protobuf/util/json_util.h"
 #include "nlohmann/json.hpp"
+#include "absl/status/status.h"
+
 
 namespace apollo {
 namespace cyber {
@@ -39,6 +41,8 @@ namespace common {
 using std::istreambuf_iterator;
 using std::string;
 using std::vector;
+using absl::Status;
+
 
 bool SetProtoToASCIIFile(const google::protobuf::Message &message,
                          int file_descriptor) {
@@ -160,7 +164,7 @@ bool GetProtoFromJsonFile(const std::string &file_name,
   ifs.close();
   JsonParseOptions options;
   options.ignore_unknown_fields = true;
-  google::protobuf::util::Status dump_status;
+  absl::Status dump_status;
   return (JsonStringToMessage(Json.dump(), message, options).ok());
 }
 

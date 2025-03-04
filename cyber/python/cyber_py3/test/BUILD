@@ -6,9 +6,9 @@ load("@rules_python//python:defs.bzl", "py_test")
 #     timeout = "short",
 #     srcs = ["record_test.py"],
 #     deps = [
-#         #"//cyber/proto:record_py_pb2",
+#         "//cyber/proto:record_py_pb2",
 #         "//cyber/python/cyber_py3:record",
-#         #"//cyber/proto:simple_py_pb2",
+#         "//cyber/proto:simple_py_pb2",
 #     ],
 # )
 
@@ -32,7 +32,7 @@ py_test(
         "../../internal",
     ],
     deps = [
-        #"//cyber/proto:simple_py_pb2",
+        "//cyber/proto:simple_py_pb2",
         "//cyber/python/cyber_py3:cyber",
     ],
 )
