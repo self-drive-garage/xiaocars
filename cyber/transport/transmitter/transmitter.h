@@ -20,6 +20,8 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <atomic>
+
 
 #include "cyber/event/perf_event_cache.h"
 //#include "cyber/statistics/statistics.h"
@@ -53,15 +55,14 @@ class Transmitter : public Endpoint {
   virtual bool Transmit(const MessagePtr& msg, const MessageInfo& msg_info) = 0;
 
   uint64_t NextSeqNum() {
-    (*seq_num_) << 1;
-    return seq_num_->get_value();
+    return seq_num_.fetch_add(1, std::memory_order_relaxed);
   }
 
-  uint64_t seq_num() const { return seq_num_->get_value(); }
+  uint64_t seq_num() const { seq_num_.load(std::memory_order_relaxed); }
 
  protected:
   MessageInfo msg_info_;
-  std::shared_ptr<::bvar::Adder<int>> seq_num_;
+  std::atomic<uint64_t> seq_num_;
 };
 
 template <typename M>

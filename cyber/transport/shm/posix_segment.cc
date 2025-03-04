@@ -19,6 +19,9 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <unistd.h>    // For `ftruncate`, `close`
+#include <sys/types.h> // Required for POSIX types
+
 
 #include "cyber/common/log.h"
 #include "cyber/common/util.h"
