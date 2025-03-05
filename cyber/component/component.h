@@ -299,8 +299,8 @@ bool Component<M0, M1, NullType, NullType>::Initialize(
           auto end_time = Time::Now().ToMicrosecond();
           // sampling proc latency and cyber latency in microsecond
           uint64_t process_start_time;
-          statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
-              *role_attr, end_time - start_time);
+          // statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
+          //     *role_attr, end_time - start_time);
           // if (statistics::Statistics::Instance()->GetProcStatus(
           //         *role_attr, &process_start_time) &&
           //     (start_time - process_start_time) > 0) {
@@ -338,8 +338,8 @@ bool Component<M0, M1, NullType, NullType>::Initialize(
       auto end_time = Time::Now().ToMicrosecond();
       // sampling proc latency and cyber latency in microsecond
       uint64_t process_start_time;
-      statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
-          *role_attr, end_time - start_time);
+      // statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
+      //     *role_attr, end_time - start_time);
       // if (statistics::Statistics::Instance()->GetProcStatus(
       //         *role_attr, &process_start_time) &&
       //     (start_time - process_start_time) > 0) {
@@ -435,8 +435,8 @@ bool Component<M0, M1, M2, NullType>::Initialize(
           auto end_time = Time::Now().ToMicrosecond();
           // sampling proc latency and cyber latency in microsecond
           uint64_t process_start_time;
-          statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
-              *role_attr, end_time - start_time);
+          // statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
+          //     *role_attr, end_time - start_time);
           // if (statistics::Statistics::Instance()->GetProcStatus(
           //         *role_attr, &process_start_time) &&
           //     (start_time - process_start_time) > 0) {
@@ -478,8 +478,8 @@ bool Component<M0, M1, M2, NullType>::Initialize(
       auto end_time = Time::Now().ToMicrosecond();
       // sampling proc latency and cyber latency in microsecond
       uint64_t process_start_time;
-      statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
-          *role_attr, end_time - start_time);
+      // statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
+      //     *role_attr, end_time - start_time);
       // if (statistics::Statistics::Instance()->GetProcStatus(
       //         *role_attr, &process_start_time) &&
       //     (start_time - process_start_time) > 0) {
@@ -585,8 +585,8 @@ bool Component<M0, M1, M2, M3>::Initialize(const ComponentConfig& config) {
           auto end_time = Time::Now().ToMicrosecond();
           // sampling proc latency and cyber latency in microsecond
           uint64_t process_start_time;
-          statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
-              *role_attr, end_time - start_time);
+          // statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
+          //     *role_attr, end_time - start_time);
           // if (statistics::Statistics::Instance()->GetProcStatus(
           //         *role_attr, &process_start_time) &&
           //     (start_time - process_start_time) > 0) {
@@ -630,8 +630,8 @@ bool Component<M0, M1, M2, M3>::Initialize(const ComponentConfig& config) {
       auto end_time = Time::Now().ToMicrosecond();
       // sampling proc latency and cyber latency in microsecond
       uint64_t process_start_time;
-      statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
-          *role_attr, end_time - start_time);
+      // statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
+      //     *role_attr, end_time - start_time);
       // if (statistics::Statistics::Instance()->GetProcStatus(
       //         *role_attr, &process_start_time) &&
       //     (start_time - process_start_time) > 0) {

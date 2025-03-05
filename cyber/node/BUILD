@@ -17,7 +17,7 @@ cc_library(
         "writer.h",
         "writer_base.h",
     ],
-    linkopts = ["-lbvar"],
+    #linkopts = ["-lbvar"],
     deps = [
         "//cyber/blocker:cyber_blocker",
         "//cyber/common:cyber_common",
@@ -41,60 +41,60 @@ cc_test(
     name = "node_channel_impl_test",
     size = "small",
     srcs = ["node_channel_impl_test.cc"],
+    linkstatic = True,
     deps = [
         "//cyber",
-        #"//cyber/proto:unit_test_cc_proto",
+        "//cyber/proto:unit_test_cc_proto",
         "@com_google_googletest//:gtest_main",
     ],
-    linkstatic = True,
 )
 
 cc_test(
     name = "node_test",
     size = "small",
     srcs = ["node_test.cc"],
+    linkstatic = True,
     deps = [
         "//cyber",
-        #"//cyber/proto:unit_test_cc_proto",
+        "//cyber/proto:unit_test_cc_proto",
         "@com_google_googletest//:gtest_main",
     ],
-    linkstatic = True,
 )
 
 cc_test(
     name = "reader_test",
     size = "small",
     srcs = ["reader_test.cc"],
+    linkstatic = True,
     deps = [
         "//cyber",
-        #"//cyber/proto:unit_test_cc_proto",
+        "//cyber/proto:unit_test_cc_proto",
         "@com_google_googletest//:gtest",
     ],
-    linkstatic = True,
 )
 
 cc_test(
     name = "writer_reader_test",
     size = "small",
     srcs = ["writer_reader_test.cc"],
+    linkstatic = True,
     deps = [
         "//cyber",
-        #"//cyber/proto:unit_test_cc_proto",
+        "//cyber/proto:unit_test_cc_proto",
         "@com_google_googletest//:gtest",
     ],
-    linkstatic = True,
 )
 
 cc_test(
     name = "writer_test",
     size = "small",
     srcs = ["writer_test.cc"],
+    linkstatic = True,
     deps = [
         "//cyber",
-        #"//cyber/proto:unit_test_cc_proto",
+        "//cyber/proto:unit_test_cc_proto",
         "@com_google_googletest//:gtest",
     ],
-    linkstatic = True,
 )
 
 #apollo_package()

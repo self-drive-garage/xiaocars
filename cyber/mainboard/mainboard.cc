@@ -26,9 +26,9 @@
 #include "cyber/mainboard/module_controller.h"
 #include "cyber/state.h"
 
-#include "gperftools/profiler.h"
-#include "gperftools/heap-profiler.h"
-#include "gperftools/malloc_extension.h"
+// #include "gperftools/profiler.h"
+// #include "gperftools/heap-profiler.h"
+// #include "gperftools/malloc_extension.h"
 
 using apollo::cyber::mainboard::ModuleArgument;
 using apollo::cyber::mainboard::ModuleController;
@@ -69,18 +69,18 @@ int main(int argc, char** argv) {
   std::signal(SIGTERM, [](int sig){
     apollo::cyber::OnShutdown(sig);
     if (enable_cpu_profile) {
-      ProfilerStop();
+      // ProfilerStop();
     }
 
     if (enable_mem_profile) {
-      HeapProfilerDump("Befor shutdown");
-      HeapProfilerStop();
+      // HeapProfilerDump("Befor shutdown");
+      // HeapProfilerStop();
     }
   });
 
   if (module_args.GetEnableHeapprofile()) {
     auto profile_filename = module_args.GetHeapProfileFilename();
-    HeapProfilerStart(profile_filename.c_str());
+    // HeapProfilerStart(profile_filename.c_str());
   }
 
   // start module
@@ -93,18 +93,18 @@ int main(int argc, char** argv) {
 
   if (module_args.GetEnableCpuprofile()) {
     auto profile_filename = module_args.GetProfileFilename();
-    ProfilerStart(profile_filename.c_str());
+    // ProfilerStart(profile_filename.c_str());
   }
 
   apollo::cyber::WaitForShutdown();
 
   if (module_args.GetEnableCpuprofile()) {
-    ProfilerStop();
+    // ProfilerStop();
   }
 
   if (module_args.GetEnableHeapprofile()) {
-    HeapProfilerDump("Befor shutdown");
-    HeapProfilerStop();
+    // HeapProfilerDump("Befor shutdown");
+    // HeapProfilerStop();
   }
 
   controller.Clear();

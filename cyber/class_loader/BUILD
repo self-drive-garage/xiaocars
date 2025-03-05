@@ -32,7 +32,7 @@ cc_library(
 #     deps = [
 #         "//cyber",
 #         "//cyber/class_loader/test:base",
-#         #"//cyber/proto:unit_test_cc_proto",
+#         "//cyber/proto:unit_test_cc_proto",
 #         "@com_google_googletest//:gtest",
 #     ],
 # )

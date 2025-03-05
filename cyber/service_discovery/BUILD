@@ -6,7 +6,6 @@ package(default_visibility = ["//visibility:public"])
 cc_library(
     name = "cyber_service_discovery",
     srcs = [
-        "topology_manager.cc",
         "communication/participant_listener.cc",
         "communication/subscriber_listener.cc",
         "container/graph.cc",
@@ -16,9 +15,9 @@ cc_library(
         "specific_manager/manager.cc",
         "specific_manager/node_manager.cc",
         "specific_manager/service_manager.cc",
+        "topology_manager.cc",
     ],
     hdrs = [
-        "topology_manager.h",
         "communication/participant_listener.h",
         "communication/subscriber_listener.h",
         "container/graph.h",
@@ -29,24 +28,25 @@ cc_library(
         "specific_manager/manager.h",
         "specific_manager/node_manager.h",
         "specific_manager/service_manager.h",
+        "topology_manager.h",
     ],
     deps = [
-        "//cyber/transport:cyber_transport",
+        "//cyber:cyber_binary",
+        "//cyber:cyber_state",
         "//cyber/base:cyber_base",
         "//cyber/common:cyber_common",
-        "//cyber:cyber_binary",
-        "//cyber/proto:role_attributes_cc_proto",
-        "//cyber:cyber_state",
         "//cyber/message:cyber_message",
         "//cyber/proto:proto_desc_cc_proto",
+        "//cyber/proto:role_attributes_cc_proto",
         "//cyber/proto:topology_change_cc_proto",
         "//cyber/time:cyber_time",
+        "//cyber/transport:cyber_transport",
     ],
 )
 
 cc_library(
     name = "subscriber_listener",
-    hdrs = ["communication/subscriber_listener.h"]
+    hdrs = ["communication/subscriber_listener.h"],
 )
 
 cc_library(
@@ -74,11 +74,11 @@ cc_test(
     name = "graph_test",
     size = "small",
     srcs = ["container/graph_test.cc"],
+    linkstatic = True,
     deps = [
         "//cyber",
         "@com_google_googletest//:gtest_main",
     ],
-    linkstatic = True,
 )
 
 cc_test(
@@ -115,34 +115,34 @@ cc_test(
     name = "channel_manager_test",
     size = "small",
     srcs = ["specific_manager/channel_manager_test.cc"],
+    linkstatic = True,
     deps = [
         "//cyber",
-        #"//cyber/proto:unit_test_cc_proto",
+        "//cyber/proto:unit_test_cc_proto",
         "@com_google_googletest//:gtest_main",
     ],
-    linkstatic = True,
 )
 
 cc_test(
     name = "node_manager_test",
     size = "small",
     srcs = ["specific_manager/node_manager_test.cc"],
+    linkstatic = True,
     deps = [
         "//cyber",
         "@com_google_googletest//:gtest_main",
     ],
-    linkstatic = True,
 )
 
 cc_test(
     name = "service_manager_test",
     size = "small",
     srcs = ["specific_manager/service_manager_test.cc"],
+    linkstatic = True,
     deps = [
         "//cyber",
         "@com_google_googletest//:gtest_main",
     ],
-    linkstatic = True,
 )
 
 #apollo_package()

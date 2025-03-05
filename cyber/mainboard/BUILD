@@ -14,14 +14,15 @@ cc_binary(
     ],
     linkopts = [
         "-pthread",
-        "-lprofiler",
-        "-ltcmalloc",
+        #        "-lprofiler",
+        # "-ltcmalloc",
     ],
     deps = [
         "//cyber",
         "//cyber/common:cyber_common",
         "//cyber/plugin_manager:cyber_plugin_manager",
         "//cyber/proto:dag_conf_cc_proto",
+        #"@com_github_gperftools_gperftools//:tcmalloc_full_bench_with_profiler",
     ],
 )
 

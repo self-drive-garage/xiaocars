@@ -7,7 +7,7 @@ cc_test(
     srcs = ["hybrid_transceiver_test.cc"],
     deps = [
         "//cyber",
-        #"//cyber/proto:unit_test_cc_proto",
+        "//cyber/proto:unit_test_cc_proto",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -18,7 +18,7 @@ cc_test(
     srcs = ["intra_transceiver_test.cc"],
     deps = [
         "//cyber",
-        #"//cyber/proto:unit_test_cc_proto",
+        "//cyber/proto:unit_test_cc_proto",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -29,7 +29,7 @@ cc_test(
     srcs = ["rtps_transceiver_test.cc"],
     deps = [
         "//cyber",
-        #"//cyber/proto:unit_test_cc_proto",
+        "//cyber/proto:unit_test_cc_proto",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -40,7 +40,7 @@ cc_test(
     srcs = ["shm_transceiver_test.cc"],
     deps = [
         "//cyber",
-        #"//cyber/proto:unit_test_cc_proto",
+        "//cyber/proto:unit_test_cc_proto",
         "@com_google_googletest//:gtest",
     ],
 )

@@ -47,7 +47,7 @@ bool TimerComponent::Initialize(const TimerComponentConfig& config) {
 
   auto role_attr = std::make_shared<proto::RoleAttributes>();
   role_attr->set_node_name(config.name());
-  role_attr->set_channel_name(statistics::TIMER_COMPONENT_CHAN_NAME);
+  role_attr->set_channel_name("TIMER_COMPONENT");
   // statistics::Statistics::Instance()->RegisterChanVar(*role_attr);
 
   std::shared_ptr<TimerComponent> self =

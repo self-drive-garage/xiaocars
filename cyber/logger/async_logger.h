@@ -74,7 +74,7 @@ class AsyncLogger : public google::base::Logger {
  public:
   explicit AsyncLogger(google::base::Logger* wrapped);
 
-  ~AsyncLogger();
+  ~AsyncLogger() override;
 
   /**
    * @brief start the async logger

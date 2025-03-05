@@ -33,10 +33,10 @@
 #include "cyber/tools/cyber_recorder/recoverer.h"
 #include "cyber/tools/cyber_recorder/spliter.h"
 
-#include "gflags/gflags.h"
-#include "gperftools/heap-profiler.h"
-#include "gperftools/malloc_extension.h"
-#include "gperftools/profiler.h"
+// #include "gflags/gflags.h"
+// #include "gperftools/heap-profiler.h"
+// #include "gperftools/malloc_extension.h"
+// #include "gperftools/profiler.h"
 
 using apollo::cyber::common::GetFileName;
 using apollo::cyber::common::StringToUnixSeconds;
@@ -488,31 +488,31 @@ int main(int argc, char** argv) {
     std::signal(SIGTERM, [](int sig) {
       apollo::cyber::OnShutdown(sig);
       if (enable_cpu_profile) {
-        ProfilerStop();
+        // ProfilerStop();
       }
       if (enable_heap_profile) {
-        HeapProfilerDump("Befor shutdown");
-        HeapProfilerStop();
+        // HeapProfilerDump("Befor shutdown");
+        // HeapProfilerStop();
       }
     });
 
     std::signal(SIGINT, [](int sig) {
       apollo::cyber::OnShutdown(sig);
       if (enable_cpu_profile) {
-        ProfilerStop();
+        // ProfilerStop();
       }
       if (enable_heap_profile) {
-        HeapProfilerDump("Befor shutdown");
-        HeapProfilerStop();
+        // HeapProfilerDump("Befor shutdown");
+        // HeapProfilerStop();
       }
     });
 
     auto base_name = std::string(argv[0]) + std::string(".prof");
     if (enable_cpu_profile) {
-      ProfilerStart(base_name.c_str());
+      // ProfilerStart(base_name.c_str());
     }
     if (enable_heap_profile) {
-      HeapProfilerStart(base_name.c_str());
+      // HeapProfilerStart(base_name.c_str());
     }
     bool record_result = recorder->Start();
     if (record_result) {
