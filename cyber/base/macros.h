@@ -20,9 +20,8 @@
 #include <cstdlib>
 #include <new>
 
-#ifndef eprosima_wrap
-#define eprosima_wrap eprosima // Example: Define it to itself if not already defined
-#endif
+#define eprosima eprosima_wrap
+
 
 
 #if __GNUC__ >= 3

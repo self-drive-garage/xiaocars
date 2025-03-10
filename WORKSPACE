@@ -1,4 +1,4 @@
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+# load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 #http_archive(
 #    name = "com_github_gperftools_gperftools",
@@ -7,3 +7,9 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 #    strip_prefix = "gperftools-a81b2ebbc2cec046aed5d571cdc783c49b48843a",
 #    url = "https://github.com/gperftools/gperftools/archive/a81b2ebbc2cec046aed5d571cdc783c49b48843a.tar.gz",
 #)
+
+new_local_repository(
+    name = "fastdds",
+    build_file = "//third_party/fastdds:fastdds.BUILD",
+    path = "/usr/local/fast-rtps-1.5.0-1",
+)
