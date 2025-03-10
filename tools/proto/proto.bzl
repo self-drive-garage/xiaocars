@@ -125,7 +125,7 @@ def proto_library(tags = [], **kwargs):
         fail("The name of the proto_library instance must end with \"proto\", e.g. \"example_proto\".")
     proto_rule_name = "_%s" % kwargs["name"]
     cc_proto_rule_name = "_%s_cc_proto" % rule_name
-    py_proto_rule_name = _to_py_target(rule_name)
+    # py_proto_rule_name = _to_py_target(rule_name)
     cc_bin_rule_name = _to_bin_target(rule_name)
     cc_lib_rule_name = "_%s_cc_lib" % rule_name
     cc_wrap_rule_name = _to_wrap_target(_to_short_target(rule_name))
@@ -205,7 +205,7 @@ def proto_library(tags = [], **kwargs):
         name = rule_name,
         srcs = [
             ":%s" % proto_rule_name,
-            ":%s" % py_proto_rule_name,
+            # ":%s" % py_proto_rule_name,
             ":%s" % cc_wrap_rule_name,
         ],
     )
@@ -214,7 +214,7 @@ def proto_library(tags = [], **kwargs):
         name = additional_fake_cc_proto_name,
         srcs = [
             ":%s" % proto_rule_name,
-            ":%s" % py_proto_rule_name,
+            # ":%s" % py_proto_rule_name,
             ":%s" % cc_wrap_rule_name,
         ],
     )
@@ -223,7 +223,7 @@ def proto_library(tags = [], **kwargs):
         name = additional_fake_py_proto_name,
         srcs = [
             ":%s" % proto_rule_name,
-            ":%s" % py_proto_rule_name,
+            # ":%s" % py_proto_rule_name,
             ":%s" % cc_wrap_rule_name,
         ],
     )
