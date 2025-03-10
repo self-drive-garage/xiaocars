@@ -268,15 +268,15 @@ bool Reader<MessageT>::Init() {
   if (reader_func_ != nullptr) {
     func = [this](const std::shared_ptr<MessageT>& msg) {
       uint64_t process_start_time;
-      uint64_t proc_done_time;
+      // uint64_t proc_done_time;
       uint64_t proc_start_time;
 
       this->Enqueue(msg);
       this->reader_func_(msg);
       // sampling proc latency in microsecond
-      proc_done_time = Time::Now().ToMicrosecond();
-      proc_start_time =
-          static_cast<uint64_t>(latest_recv_time_sec_ * 1000000UL);
+      // proc_done_time = Time::Now().ToMicrosecond();
+      // proc_start_time =
+      //     static_cast<uint64_t>(latest_recv_time_sec_ * 1000000UL);
 
       // statistics::Statistics::Instance()->SamplingProcLatency<uint64_t>(
       //     this->role_attr_, (proc_done_time - proc_start_time));

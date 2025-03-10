@@ -43,6 +43,7 @@ class ClassLoader;
 
 namespace utility {
 
+
 using SharedLibraryPtr = std::shared_ptr<SharedLibrary>;
 using ClassClassFactoryMap =
     std::map<std::string, utility::AbstractClassFactoryBase*>;
@@ -73,11 +74,16 @@ Base* CreateClassObj(const std::string& class_name, ClassLoader* loader);
 template <typename Base>
 std::vector<std::string> GetValidClassNames(ClassLoader* loader);
 
+// Declare the variable externally
+extern std::string library_name_;
+extern std::recursive_mutex mMap_;
+extern std::recursive_mutex mLib_;
+extern BaseToClassFactoryMapMap baseToClassFactoryMapMap_;
+extern LibPathSharedLibVector libPathSharedLibVector_;
+
 template <typename Derived, typename Base>
 void RegisterClass(const std::string& class_name,
                    const std::string& base_class_name) {
-  AINFO << "registerclass:" << class_name << "," << base_class_name << ","
-        << GetCurLoadingLibraryName();
 
   utility::AbstractClassFactory<Base>* new_class_factory_obj =
       new utility::ClassFactory<Derived, Base>(class_name, base_class_name);
@@ -87,6 +93,8 @@ void RegisterClass(const std::string& class_name,
   GetClassFactoryMapMapMutex().lock();
   ClassClassFactoryMap& factory_map =
       GetClassFactoryMapByBaseClass(typeid(Base).name());
+  AERROR << " --------- adding new class factory object to class factory map";
+  AERROR << " --------- this class factory has the class loader and shared lib path";
   factory_map[class_name] = new_class_factory_obj;
   GetClassFactoryMapMapMutex().unlock();
 }
@@ -114,7 +122,6 @@ Base* CreateClassObj(const std::string& class_name, ClassLoader* loader) {
 template <typename Base>
 std::vector<std::string> GetValidClassNames(ClassLoader* loader) {
   std::lock_guard<std::recursive_mutex> lck(GetClassFactoryMapMapMutex());
-
   ClassClassFactoryMap& factoryMap =
       GetClassFactoryMapByBaseClass(typeid(Base).name());
   std::vector<std::string> classes;

@@ -159,7 +159,7 @@ int main(int argc, char *argv[]) {
 #### Bazel BUILD file(cyber/samples/BUILD)
 
 ```python
-cc_binary(
+apollo_cc_binary(
     name = "talker",
     srcs = [ "talker.cc", ],
     deps = [
@@ -168,7 +168,7 @@ cc_binary(
     ],
 )
 
-cc_binary(
+apollo_cc_binary(
     name = "listener",
     srcs = [ "listener.cc", ],
     deps = [
@@ -258,7 +258,7 @@ int main(int argc, char* argv[]) {
 #### Bazel build file
 
 ```python
-cc_binary(
+apollo_cc_binary(
     name = "service",
     srcs = [ "service.cc", ],
     deps = [

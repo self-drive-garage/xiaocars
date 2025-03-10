@@ -32,7 +32,7 @@ int main(int argc, char* argv[]) {
   // create listener
   auto listener =
       listener_node->CreateReader<apollo::cyber::examples::proto::Chatter>(
-          "channel/chatter", MessageCallback);
+          "/apollo/test", MessageCallback);
   apollo::cyber::WaitForShutdown();
   return 0;
 }

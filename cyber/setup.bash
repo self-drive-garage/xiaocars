@@ -5,6 +5,32 @@ source ${TOP_DIR}/scripts/apollo.bashrc
 export APOLLO_BAZEL_DIST_DIR="${APOLLO_CACHE_DIR}/distdir"
 export CYBER_PATH="${APOLLO_ROOT_DIR}/cyber"
 
+
+function pathremove() {
+  local IFS=':'
+  local NEWPATH
+  local DIR
+  local PATHVARIABLE=${2:-PATH}
+  for DIR in ${!PATHVARIABLE}; do
+    if [ "$DIR" != "$1" ]; then
+      NEWPATH=${NEWPATH:+$NEWPATH:}$DIR
+    fi
+  done
+  export $PATHVARIABLE="$NEWPATH"
+}
+
+function pathprepend() {
+  pathremove $1 $2
+  local PATHVARIABLE=${2:-PATH}
+  export $PATHVARIABLE="$1${!PATHVARIABLE:+:${!PATHVARIABLE}}"
+}
+
+function pathappend() {
+  pathremove $1 $2
+  local PATHVARIABLE=${2:-PATH}
+  export $PATHVARIABLE="${!PATHVARIABLE:+${!PATHVARIABLE}:}$1"
+}
+
 bazel_bin_path="${APOLLO_ROOT_DIR}/bazel-bin"
 mainboard_path="${bazel_bin_path}/cyber/mainboard"
 cyber_tool_path="${bazel_bin_path}/cyber/tools"

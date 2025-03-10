@@ -26,3 +26,4 @@ bool CommonComponentSample::Proc(const std::shared_ptr<Driver>& msg0,
         << msg1->msg_id() << "]";
   return true;
 }
+

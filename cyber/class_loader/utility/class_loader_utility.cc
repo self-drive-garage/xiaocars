@@ -16,29 +16,33 @@
 
 #include "cyber/class_loader/utility/class_loader_utility.h"
 
+// #include "cyber/class_loader/class_loader.h"
+
 namespace apollo {
 namespace cyber {
 namespace class_loader {
 namespace utility {
 
+std::string library_name_;
+std::recursive_mutex mMap_;
+std::recursive_mutex mLib_;
+BaseToClassFactoryMapMap baseToClassFactoryMapMap_;
+LibPathSharedLibVector libPathSharedLibVector_;
+
 std::recursive_mutex& GetClassFactoryMapMapMutex() {
-  static std::recursive_mutex m;
-  return m;
+  return mMap_;
 }
 
 std::recursive_mutex& GetLibPathSharedLibMutex() {
-  static std::recursive_mutex m;
-  return m;
+  return mLib_;
 }
 
 BaseToClassFactoryMapMap& GetClassFactoryMapMap() {
-  static BaseToClassFactoryMapMap instance;
-  return instance;
+  return baseToClassFactoryMapMap_;
 }
 
 LibPathSharedLibVector& GetLibPathSharedLibVector() {
-  static LibPathSharedLibVector instance;
-  return instance;
+  return libPathSharedLibVector_;
 }
 
 ClassClassFactoryMap& GetClassFactoryMapByBaseClass(
@@ -46,6 +50,7 @@ ClassClassFactoryMap& GetClassFactoryMapByBaseClass(
   BaseToClassFactoryMapMap& factoryMapMap = GetClassFactoryMapMap();
   std::string base_class_name = typeid_base_class_name;
   if (factoryMapMap.find(base_class_name) == factoryMapMap.end()) {
+    AERROR << " >>>>>> adding base class name " << typeid_base_class_name << " to map of class factory maps";
     factoryMapMap[base_class_name] = ClassClassFactoryMap();
   }
 
@@ -211,6 +216,7 @@ bool LoadLibrary(const std::string& library_path, ClassLoader* loader) {
     try {
       SetCurActiveClassLoader(loader);
       SetCurLoadingLibraryName(library_path);
+
       shared_library = SharedLibraryPtr(new SharedLibrary(library_path));
     } catch (const LibraryLoadException& e) {
       SetCurLoadingLibraryName("");
@@ -226,8 +232,8 @@ bool LoadLibrary(const std::string& library_path, ClassLoader* loader) {
       AERROR << "SymbolNotFoundException: " << e.what();
     }
 
-    SetCurLoadingLibraryName("");
-    SetCurActiveClassLoader(nullptr);
+    // SetCurLoadingLibraryName("");
+    // SetCurActiveClassLoader(nullptr);
   }
 
   if (shared_library == nullptr) {

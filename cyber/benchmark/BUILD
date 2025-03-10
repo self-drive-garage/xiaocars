@@ -2,7 +2,7 @@
 ##load("//tools/proto:proto.bzl", "proto_library", "py_binary")
 #load("@rules_proto//proto:defs.bzl", "proto_library")
 #
-###load("//tools:apollo_package.bzl", "apollo_package", "cc_binary")
+load("//tools:apollo_package.bzl", "apollo_cc_binary", "apollo_package")
 #
 #package(default_visibility = ["//visibility:public"])
 #
@@ -11,7 +11,7 @@
 #    srcs = ["cyber_benchmark.py"],
 #)
 #
-#cc_binary(
+#apollo_cc_binary(
 #    name = "cyber_benchmark_reader",
 #    srcs = [
 #        "cyber_benchmark_reader.cc",
@@ -27,7 +27,7 @@
 #    ],
 #)
 #
-#cc_binary(
+#apollo_cc_binary(
 #    name = "cyber_benchmark_writer",
 #    srcs = [
 #        "cyber_benchmark_writer.cc",

@@ -1,9 +1,9 @@
 #load("//tools:cpplint.bzl", "cpplint")
-##load("//tools:apollo_package.bzl", "apollo_package", "cc_binary")
+load("//tools:apollo_package.bzl", "apollo_cc_binary", "apollo_package")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_binary(
+apollo_cc_binary(
     name = "talker",
     srcs = ["talker.cc"],
     deps = [
@@ -12,7 +12,7 @@ cc_binary(
     ],
 )
 
-cc_binary(
+apollo_cc_binary(
     name = "listener",
     srcs = ["listener.cc"],
     deps = [
@@ -21,7 +21,7 @@ cc_binary(
     ],
 )
 
-cc_binary(
+apollo_cc_binary(
     name = "paramserver",
     srcs = ["paramserver.cc"],
     deps = [
@@ -29,7 +29,7 @@ cc_binary(
     ],
 )
 
-cc_binary(
+apollo_cc_binary(
     name = "service",
     srcs = ["service.cc"],
     deps = [
@@ -38,7 +38,7 @@ cc_binary(
     ],
 )
 
-cc_binary(
+apollo_cc_binary(
     name = "record",
     srcs = ["record.cc"],
     deps = [

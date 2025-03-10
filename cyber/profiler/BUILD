@@ -1,20 +1,20 @@
 #load("//tools:cpplint.bzl", "cpplint")
-##load("//tools:apollo_package.bzl", "cc_library", "apollo_package", "cc_test")
+load("//tools:apollo_package.bzl", "apollo_cc_library", "apollo_package")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
+apollo_cc_library(
     name = "cyber_profiler",
-    hdrs = [
-        "profiler.h",
-        "block_manager.h",
-        "block.h",
-        "frame.h",
-    ],
     srcs = [
-        "block_manager.cc",
         "block.cc",
+        "block_manager.cc",
         "frame.cc",
+    ],
+    hdrs = [
+        "block.h",
+        "block_manager.h",
+        "frame.h",
+        "profiler.h",
     ],
     deps = [
         "//cyber/common:cyber_common",
@@ -26,11 +26,11 @@ cc_test(
     name = "profiler_test",
     size = "small",
     srcs = ["profiler_test.cc"],
+    linkstatic = True,
     deps = [
         ":cyber_profiler",
         "@com_google_googletest//:gtest_main",
     ],
-    linkstatic = True,
 )
 
 #apollo_package()

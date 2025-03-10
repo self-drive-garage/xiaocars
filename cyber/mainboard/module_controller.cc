@@ -85,7 +85,6 @@ bool ModuleController::LoadModule(const DagConfig& dag_config) {
     AINFO << "mainboard: use module library " << load_path;
 
     class_loader_manager_.LoadLibrary(load_path);
-
     for (auto& component : module_config.components()) {
       const std::string& class_name = component.class_name();
       std::shared_ptr<ComponentBase> base =

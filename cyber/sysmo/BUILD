@@ -1,5 +1,5 @@
 #load("//tools:cpplint.bzl", "cpplint")
-##load("//tools:apollo_package.bzl", "cc_library", "apollo_package", "cc_test")
+load("//tools:apollo_package.bzl", "apollo_cc_library", "apollo_package")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -7,14 +7,14 @@ cc_test(
     name = "sysmo_test",
     size = "small",
     srcs = ["sysmo_test.cc"],
+    linkstatic = True,
     deps = [
         "//cyber",
         "@com_google_googletest//:gtest_main",
     ],
-    linkstatic = True,
 )
 
-cc_library(
+apollo_cc_library(
     name = "cyber_sysmo",
     srcs = ["sysmo.cc"],
     hdrs = ["sysmo.h"],

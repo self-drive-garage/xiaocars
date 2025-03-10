@@ -1,17 +1,35 @@
-# Common build options
-build --cxxopt="-std=c++17"
-build --jobs=4
+# General settings
+build --jobs=16
 build --verbose_failures
 build --keep_going
 build --registry=https://raw.githubusercontent.com/wheelos/bazel-central-registry/fastdds-2.14.x
 build --registry=https://bcr.bazel.build/
 
 # Enable Bzlmod for every Bazel command
-common --enable_bzlmod
+# common --enable_bzlmod
 
-# Compilation modes
-build:release --compilation_mode=opt --strip=always --copt=-O3
-build:debug --compilation_mode=dbg --copt=-g --copt=-O0
+# Language standard
+build --cxxopt=-std=c++17
 
-build --action_env="PYTHON_BIN_PATH=/usr/bin/python3"
-build --action_env="CPLUS_INCLUDE_PATH=/usr/local/fast-rtps/include"
+# Compiler warnings and flags
+#build --cxxopt=-Wall
+#build --cxxopt=-Wextra
+#build --cxxopt=-Wno-unused-parameter
+#build --cxxopt=-Wno-unknown-pragmas
+#build --cxxopt=-Wno-sign-compare
+#build --cxxopt=-Wno-redundant-move  # Fix for protobuf issue
+#build --cxxopt=-Werror=return-type
+#build --cxxopt=-fno-omit-frame-pointer
+#build --cxxopt=-MD
+
+# Position Independent Code for shared libraries
+#build --force_pic
+#build --features=supports_pic
+#build --cxxopt=-fPIC
+#build --linkopt=-rdynamic
+#build --linkopt=-Wl,-z,relro,-z,now
+#build --linkopt=-Wl,--gc-sections
+#build --linkopt=-Wl,--build-id=md5
+#build --linkopt=-Wl,--hash-style=gnu
+#build --linkopt=-lstdc++
+

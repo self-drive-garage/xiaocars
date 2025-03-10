@@ -1,9 +1,9 @@
 #load("//tools:cpplint.bzl", "cpplint")
-##load("//tools:apollo_package.bzl", "cc_library", "apollo_package", "cc_test")
+load("//tools:apollo_package.bzl", "apollo_cc_library", "apollo_package")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
+apollo_cc_library(
     name = "cyber_service_discovery",
     srcs = [
         "communication/participant_listener.cc",
@@ -44,12 +44,12 @@ cc_library(
     ],
 )
 
-cc_library(
+apollo_cc_library(
     name = "subscriber_listener",
     hdrs = ["communication/subscriber_listener.h"],
 )
 
-cc_library(
+apollo_cc_library(
     name = "cyber_service_discovery_role",
     srcs = ["role/role.cc"],
     hdrs = ["role/role.h"],

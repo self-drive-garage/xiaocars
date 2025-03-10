@@ -1,10 +1,9 @@
-load("//tools/install:install.bzl", "install", "install_files", "install_src_files", "install_plugin")
+load("@rules_cc//cc:defs.bzl", legacy_cc_binary = "cc_binary", legacy_cc_library = "cc_library", legacy_cc_test = "cc_test")
 load("//tools:apollo.bzl", "cyber_plugin_description")
-load("//tools:common.bzl", "select2dict", "list_str2list")
-load("//tools/package:dynamic_deps.bzl", "STATUS", "SOURCE", "BINARY")
+load("//tools:common.bzl", "list_str2list", "select2dict")
+load("//tools/install:install.bzl", "install", "install_files", "install_plugin", "install_src_files")
+load("//tools/package:dynamic_deps.bzl", "BINARY", "SOURCE", "STATUS")
 load("//tools/proto:proto.bzl", "fix_proto_cc_binary_wrap", "fix_proto_cc_library_wrap", "fix_proto_cc_test_wrap")
-load("@rules_cc//cc:defs.bzl", legacy_cc_library = "cc_library", legacy_cc_binary = "cc_binary", legacy_cc_test = "cc_test")
-
 
 INSATLL_LABEL_NAME = "install"
 INSTALL_SRC_LABEL_NAME = "install_src"
@@ -40,13 +39,13 @@ def _is_plugin_package():
     for rule in native.existing_rules().values():
         if rule["kind"] == PLUGIN_RULE:
             return True
-    return False 
+    return False
 
 def _is_plugin_label(rule_instance):
     for rule in native.existing_rules().values():
         if rule["kind"] == PLUGIN_RULE and rule["plugin"].endswith(rule_instance["name"]):
             return True
-    return False 
+    return False
 
 def _find_description(rule_instance):
     for rule in native.existing_rules().values():
@@ -68,10 +67,14 @@ def _need_autoconf_install():
         has_install_src_rule = False
     return has_install_rule, has_install_src_rule
 
-def _add_install_rules(install_actions, install_src_actions, 
-                        has_install_rule, has_install_src_rule, 
-                        package_name,subpackages_install_target, 
-                        subpackages_install_src_target):
+def _add_install_rules(
+        install_actions,
+        install_src_actions,
+        has_install_rule,
+        has_install_src_rule,
+        package_name,
+        subpackages_install_target,
+        subpackages_install_src_target):
     if not has_install_rule:
         for action in install_actions:
             if action["kind"] == SHARED_LIB_OR_BIN_RULE:
@@ -91,7 +94,7 @@ def _add_install_rules(install_actions, install_src_actions,
                             library_dest = action["library_dest"],
                             type = action["type"],
                             tags = rule_tags,
-                            package_path = package_name, 
+                            package_path = package_name,
                             visibility = ["//visibility:public"],
                         )
                 else:
@@ -100,7 +103,7 @@ def _add_install_rules(install_actions, install_src_actions,
                         targets = action["targets"],
                         runtime_dest = action["runtime_dest"],
                         type = action["type"],
-                        package_path = package_name, 
+                        package_path = package_name,
                         visibility = ["//visibility:public"],
                     )
             elif action["kind"] == DATA_RULE:
@@ -111,7 +114,7 @@ def _add_install_rules(install_actions, install_src_actions,
                     type = action["type"],
                     package_path = package_name,
                     visibility = ["//visibility:public"],
-                ) 
+                )
             elif action["kind"] == PYTHON_LIB_RULE:
                 install_files(
                     name = action["name"],
@@ -145,8 +148,8 @@ def _add_install_rules(install_actions, install_src_actions,
                     data = action["data"],
                     data_dest = action["data_dest"],
                     type = action["type"],
-                    package_path = package_name, 
-                    visibility = ["//visibility:public"], 
+                    package_path = package_name,
+                    visibility = ["//visibility:public"],
                 )
             else:
                 continue
@@ -163,7 +166,7 @@ def _add_install_rules(install_actions, install_src_actions,
             if action["type"] != "disable_source":
                 install_src_files(
                     name = action["name"],
-                    src_dir =  action["src_dir"],
+                    src_dir = action["src_dir"],
                     dest = action["dest"],
                     filter = action["filter"],
                     type = action["type"],
@@ -172,13 +175,13 @@ def _add_install_rules(install_actions, install_src_actions,
             else:
                 install_src_files(
                     name = action["name"],
-                    src_dir =  action["src_dir"],
+                    src_dir = action["src_dir"],
                     dest = action["dest"],
                     filter = action["filter"],
                     type = action["type"],
                     visibility = ["//visibility:public"],
-                ) 
-        
+                )
+
         install_src_files(
             name = "install_src",
             deps = [i["name"] for i in install_src_actions] + subpackages_install_src_target,
@@ -205,29 +208,33 @@ def _generate_plugin_rule(package_install_target, package_name):
         install_action_instance["type"] = "neo"
         install_action_instance["data"] = [rule["description"]]
         install_action_instance["data_dest"] = "plugin_meta@%s@%s" % (
-            package_name, rule["description"].replace(":", ""))
+            package_name,
+            rule["description"].replace(":", ""),
+        )
         package_install_target.append(install_action_instance)
 
-def apollo_package(enable_source=True):
-    """For every rule which should be installed in the BUILD file so far, 
-    adds a install rule that runs installation over the sources listed in that rule.  
+def apollo_package(enable_source = True):
+    """For every rule which should be installed in the BUILD file so far,
+    adds a install rule that runs installation over the sources listed in that rule.
     Thus, BUILD file authors should call this function at the *end* of every BUILD file.
     """
     has_install_rule, has_install_src_rule = _need_autoconf_install()
     if has_install_rule and has_install_src_rule:
-        return 
+        return
 
     package_install_target = []
     package_name = native.package_name()
 
-    subpackages = native.subpackages(include=["**/*"], allow_empty=True)
+    subpackages = native.subpackages(include = ["**/*"], allow_empty = True)
     subpackages_install_target = [
-        "//%s/%s:%s" % (package_name, i, "install") for i in subpackages
+        "//%s/%s:%s" % (package_name, i, "install")
+        for i in subpackages
     ]
     subpackages_install_src_target = [
-        "//%s/%s:%s" % (package_name, i, "install_src") for i in subpackages
+        "//%s/%s:%s" % (package_name, i, "install_src")
+        for i in subpackages
     ]
-    
+
     for rule in native.existing_rules().values():
         if "testonly" in rule and rule["testonly"] == True:
             continue
@@ -239,9 +246,9 @@ def apollo_package(enable_source=True):
             if _is_lib(rule["name"]):
                 install_action_instance["type"] = "neo"
                 install_action_instance["label"] = "lib"
-                install_action_instance["library_dest"] = "lib/%s" % package_name 
+                install_action_instance["library_dest"] = "lib/%s" % package_name
                 if "tags" in rule and len(rule["tags"]) >= 2 and "export_library" in rule["tags"]:
-                    rule_tags = [rule["tags"][len(rule["tags"])-2], rule["tags"][-1]]
+                    rule_tags = [rule["tags"][len(rule["tags"]) - 2], rule["tags"][-1]]
                     install_action_instance["tags"] = rule["tags"]
                 if _is_plugin_label(rule):
                     install_action_instance["plguin"] = True
@@ -255,7 +262,7 @@ def apollo_package(enable_source=True):
             install_action_instance["type"] = "neo"
             install_action_instance["data"] = [":%s" % rule["name"]]
             install_action_instance["data_dest"] = "share/%s" % package_name
-            package_install_target.append(install_action_instance) 
+            package_install_target.append(install_action_instance)
         elif rule["kind"] == PYTHON_LIB_RULE:
             install_action_instance["type"] = "neo"
             install_action_instance["files"] = [":%s" % rule["name"]]
@@ -268,9 +275,10 @@ def apollo_package(enable_source=True):
             package_install_target.append(install_action_instance)
         elif rule["kind"] == CPP_PROTO_RULE:
             install_action_instance["type"] = "neo"
+
             # install_action_instance["data"] = [":%s" % rule["name"]]
-            install_action_instance["data"] = ["//%s:%s" % (package_name, rule["name"])]
-            install_action_instance["data_dest"] = "include/%s" % package_name 
+            install_action_instance["data"] = ["@apollo_src//%s:%s" % (package_name, rule["name"])]
+            install_action_instance["data_dest"] = "include/%s" % package_name
             package_install_target.append(install_action_instance)
         elif rule["kind"] == DEFAULT_LIB_RULE:
             if "tags" in rule and "shared_library" in rule["tags"]:
@@ -280,18 +288,18 @@ def apollo_package(enable_source=True):
                 package_install_target.append(install_action_instance)
         else:
             continue
-    
+
     _generate_cyberfile_rule(package_install_target, package_name)
     if _is_plugin_package():
         _generate_plugin_rule(package_install_target, package_name)
-    
+
     if enable_source:
         src_code_action = {
             "name": "install_module_src",
             "src_dir": ["."],
             "dest": "src/%s" % package_name,
             "filter": "*",
-            "type": "neo"
+            "type": "neo",
         }
     else:
         src_code_action = {
@@ -299,8 +307,8 @@ def apollo_package(enable_source=True):
             "src_dir": ["__DO_NOT_INSTALL__"],
             "dest": "src/%s" % package_name,
             "filter": "*",
-            "type": "disable_source"
-        } 
+            "type": "disable_source",
+        }
     header_action = {
         "name": "install_header_src",
         "src_dir": ["."],
@@ -310,9 +318,14 @@ def apollo_package(enable_source=True):
     }
 
     _add_install_rules(
-        package_install_target, [src_code_action, header_action],
-        has_install_rule, has_install_src_rule, package_name,
-        subpackages_install_target, subpackages_install_src_target)
+        package_install_target,
+        [src_code_action, header_action],
+        has_install_rule,
+        has_install_src_rule,
+        package_name,
+        subpackages_install_target,
+        subpackages_install_src_target,
+    )
 
 def _replace_result(origin_target, pkg_name):
     if ":" not in origin_target:
@@ -321,6 +334,7 @@ def _replace_result(origin_target, pkg_name):
     origin_target_split = origin_target.split(":")
     target_name = origin_target_split[-1] if "proto" not in origin_target_split[-1] else origin_target_split[-1].replace("_cc_", "_")
     prefix = origin_target_split[0].replace("//", "")
+
     # Consistent with the way target is converted in the meta information: tools/install/install.py.in
     replaced_target_name = "{}_C{}".format(prefix.replace("/", "_S"), target_name)
     # if len(replaced_target_name) > 100:
@@ -346,34 +360,32 @@ def _is_replace_instance(instance):
             continue
         if _is_belong_path(instance, SOURCE[pkg]["path"]):
             return False, None
-                
+
     for pkg in BINARY:
         if not instance.startswith(BINARY[pkg]["path"]):
             continue
         if instance == BINARY[pkg]["path"]:
             return True, pkg
-        else:
-            if instance[len(BINARY[pkg]["path"])] == "/" or instance[len(BINARY[pkg]["path"])] == ":":
-                return True, pkg
-    
+        elif instance[len(BINARY[pkg]["path"])] == "/" or instance[len(BINARY[pkg]["path"])] == ":":
+            return True, pkg
+
     return False, None
 
 def _replace_deps(deps_list):
     for i in range(len(deps_list)):
         if "@" not in deps_list[i]:
             continue
+        elif ":" in deps_list[i]:
+            continue
         else:
-            if ":" in deps_list[i]:
-                continue
-            else:
-                lib_name = deps_list[i].replace("//", "").replace("@", "")
-                deps_list[i] = deps_list[i] + "//:" + lib_name
+            lib_name = deps_list[i].replace("//", "").replace("@", "")
+            deps_list[i] = deps_list[i] + "//:" + lib_name
 
     for i in range(len(deps_list)):
         status, pkg_name = _is_replace_instance(deps_list[i])
         if status:
             deps_list[i] = _replace_result(deps_list[i], pkg_name)
-    
+
     new_deps = [] + deps_list
 
     deps_map = {}
@@ -381,17 +393,17 @@ def _replace_deps(deps_list):
         deps_map[i] = i
     new_deps = [i for i in deps_map]
 
-    return new_deps    
+    return new_deps
 
-def _auto_padding_deps(registered_deps, auto_deps=False):
+def _auto_padding_deps(registered_deps, auto_deps = False):
     target_location = native.package_name()
     target_location_with_prefix = "//{}".format(target_location)
     source_pkg = None
     for i in SOURCE:
         if target_location_with_prefix.startswith(SOURCE[i]["path"]) and \
-            (len(target_location_with_prefix) == len(SOURCE[i]["path"]) or \
-                ("//{}".format(target_location))[len(SOURCE[i]["path"])] == "/" or \
-                ("//{}".format(target_location))[len(SOURCE[i]["path"])] == ":"):
+           (len(target_location_with_prefix) == len(SOURCE[i]["path"]) or
+            ("//{}".format(target_location))[len(SOURCE[i]["path"])] == "/" or
+            ("//{}".format(target_location))[len(SOURCE[i]["path"])] == ":"):
             source_pkg = i
             break
     if source_pkg == None:
@@ -403,9 +415,9 @@ def _auto_padding_deps(registered_deps, auto_deps=False):
             depend_binary = None
             for b in BINARY:
                 if "//{}".format(dep_path).startswith(BINARY[b]["path"]) and \
-                    (len("//{}".format(dep_path)) == len(BINARY[b]["path"]) or \
-                        ("//{}".format(dep_path))[len(BINARY[b]["path"])] == "/" or \
-                        ("//{}".format(dep_path))[len(BINARY[b]["path"])] == ":"): 
+                   (len("//{}".format(dep_path)) == len(BINARY[b]["path"]) or
+                    ("//{}".format(dep_path))[len(BINARY[b]["path"])] == "/" or
+                    ("//{}".format(dep_path))[len(BINARY[b]["path"])] == ":"):
                     depend_binary = b
                     break
             if depend_binary == None:
@@ -432,6 +444,7 @@ def _auto_padding_deps(registered_deps, auto_deps=False):
                         ret_deps.append(i)
         return ret_deps
         # fail("Can't find package located in {} in SOURCE dict of dynamic-import file".format(target_location))
+
     ret_deps = []
     for dep in SOURCE[source_pkg]["depends"]:
         if dep not in BINARY:
@@ -443,24 +456,23 @@ def _auto_padding_deps(registered_deps, auto_deps=False):
                 if APOLLO_COMPONENT_LIBRARY_PREFIX in depend_target:
                     continue
                 ret_deps.append(depend_target)
-        else:
-            if len(BINARY[dep]["targets"]) > 0:
-                if dep[0].isdigit():
+        elif len(BINARY[dep]["targets"]) > 0:
+            if dep[0].isdigit():
+                for i in BINARY[dep]["targets"]:
+                    if i in registered_deps:
+                        continue
+                    ret_deps.append(i)
+            else:
+                hdr_target = "@{}//:{}".format(dep, dep)
+                if hdr_target in BINARY[dep]["targets"]:
+                    if hdr_target in registered_deps:
+                        continue
+                    ret_deps.append(hdr_target)
+                else:
                     for i in BINARY[dep]["targets"]:
                         if i in registered_deps:
                             continue
-                        ret_deps.append(i) 
-                else:
-                    hdr_target = "@{}//:{}".format(dep, dep)
-                    if hdr_target in BINARY[dep]["targets"]:
-                        if hdr_target in registered_deps:
-                            continue
-                        ret_deps.append(hdr_target)
-                    else:
-                        for i in BINARY[dep]["targets"]:
-                            if i in registered_deps:
-                                continue
-                            ret_deps.append(i)
+                        ret_deps.append(i)
     return ret_deps
 
 def dynamic_fill_deps(attrs):
@@ -472,7 +484,7 @@ def dynamic_fill_deps(attrs):
         attrs["deps"] = []
 
     deps = attrs["deps"]
-    
+
     current_deps_dict = {}
     ret_deps_list = []
     if type(deps) == "select":
@@ -500,7 +512,7 @@ def dynamic_fill_deps(attrs):
         if "auto_find_deps" in attrs and attrs["auto_find_deps"] == True:
             ret_deps_list.append(_auto_padding_deps(current_deps_dict), True)
         else:
-            ret_deps_list.append(_auto_padding_deps(current_deps_dict)) 
+            ret_deps_list.append(_auto_padding_deps(current_deps_dict))
 
         n_deps = []
         for d in ret_deps_list:
@@ -565,11 +577,16 @@ def apollo_component(**kwargs):
         fail("'apollo_component' macro has not 'alwayslink' attribute")
 
     internal_lib_name = "{}{}".format(
-        APOLLO_COMPONENT_LIBRARY_PREFIX, kwargs["name"][3: len(kwargs["name"])-3])
+        APOLLO_COMPONENT_LIBRARY_PREFIX,
+        kwargs["name"][3:len(kwargs["name"]) - 3],
+    )
 
-    apollo_cc_library(**dict(dynamic_fill_deps(kwargs), name = internal_lib_name, 
-                            visibility = ["//visibility:public"]))
-    
+    apollo_cc_library(**dict(
+        dynamic_fill_deps(kwargs),
+        name = internal_lib_name,
+        visibility = ["//visibility:public"],
+    ))
+
     CC_BINARY(
         name = kwargs["name"],
         linkshared = True,
@@ -591,7 +608,7 @@ def apollo_cc_library(**kwargs):
     if "hdrs" in kwargs:
         merge_src += kwargs["hdrs"]
     temp = {}
-    
+
     select_dict_list = []
     if type(merge_src) == "select":
         merge_src_list = []
@@ -611,16 +628,24 @@ def apollo_cc_library(**kwargs):
     if len(select_dict_list) != 0:
         for i in select_dict_list:
             merge_src += select(i)
-    
+
     if "alwayslink" in bin_kwargs:
         bin_kwargs.pop("alwayslink")
     CC_BINARY(**dict(
-        dynamic_fill_deps(bin_kwargs), name = "lib{}.so".format(bin_kwargs["name"]),
-        linkshared = True, linkstatic = True, srcs = merge_src,
-        visibility = ["//visibility:public"], tags = ["export_library", kwargs["name"]]))
+        dynamic_fill_deps(bin_kwargs),
+        name = "lib{}.so".format(bin_kwargs["name"]),
+        linkshared = True,
+        linkstatic = True,
+        srcs = merge_src,
+        visibility = ["//visibility:public"],
+        tags = ["export_library", kwargs["name"]],
+    ))
     CC_LIBRARY(**dict(
-        dynamic_fill_deps(kwargs), srcs = [":lib{}.so".format(kwargs["name"])],
-        alwayslink = True, visibility = ["//visibility:public"]))
+        dynamic_fill_deps(kwargs),
+        srcs = [":lib{}.so".format(kwargs["name"])],
+        alwayslink = True,
+        visibility = ["//visibility:public"],
+    ))
 
 def apollo_plugin(**kwargs):
     if "description" not in kwargs:
@@ -629,7 +654,7 @@ def apollo_plugin(**kwargs):
         fail("missing attribution of 'name'")
     if not kwargs["name"].startswith("lib") or not kwargs["name"].endswith(".so"):
         fail("name must start with 'lib' and end with '.so'")
-    cc_library_name = "{}_lib".format(kwargs["name"][3: len(kwargs["name"])-3])
+    cc_library_name = "{}_lib".format(kwargs["name"][3:len(kwargs["name"]) - 3])
 
     cyber_plugin_description(
         name = "plugin_{}_description".format(cc_library_name),
@@ -644,7 +669,7 @@ def apollo_plugin(**kwargs):
         srcs = kwargs["srcs"] if "srcs" in kwargs else [],
         hdrs = kwargs["hdrs"] if "hdrs" in kwargs else [],
         deps = kwargs["deps"] if "deps" in kwargs else [],
-        copts = kwargs["copts"] if "copts" in kwargs else [], 
+        copts = kwargs["copts"] if "copts" in kwargs else [],
         alwayslink = True,
     )
 

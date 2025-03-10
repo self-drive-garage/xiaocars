@@ -25,6 +25,8 @@
 
 #include <dlfcn.h>
 
+#include "cyber/common/log.h"
+
 namespace apollo {
 namespace cyber {
 namespace class_loader {
@@ -52,6 +54,7 @@ void SharedLibrary::Load(const std::string& path, int flags) {
   handle_ = dlopen(path.c_str(), real_flag);
   if (!handle_) {
     const char* err = dlerror();
+    AWARN << "ABOUT TO THROW" ;
     throw LibraryLoadException(err ? std::string(err) : path);
   }
 

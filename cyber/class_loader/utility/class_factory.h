@@ -19,6 +19,7 @@
 #include <string>
 #include <typeinfo>
 #include <vector>
+#include "cyber/common/log.h"
 
 namespace apollo {
 namespace cyber {

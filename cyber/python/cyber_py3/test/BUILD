@@ -1,5 +1,5 @@
 #load("@rules_python//python:defs.bzl", "py_test")
-##load("//tools:apollo_package.bzl", "apollo_package")
+load("//tools:apollo_package.bzl", "apollo_package")
 #
 ## py_test(
 ##     name = "record_test",

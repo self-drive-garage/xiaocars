@@ -1,20 +1,29 @@
 #load("//tools:cpplint.bzl", "cpplint")
-#load("//tools:apollo_package.bzl", "apollo_package", "cc_library", "cc_test", "cc_binary")
+load("//tools:apollo_package.bzl", "apollo_cc_binary", "apollo_cc_library", "apollo_package")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
+apollo_cc_library(
     name = "shared_library",
     srcs = ["shared_library.cc"],
-    hdrs = ["shared_library.h", "exceptions.h"],
+    hdrs = [
+        "exceptions.h",
+        "shared_library.h",
+    ],
     linkopts = ["-ldl"],
+    deps = [
+        "//cyber/common:cyber_common",
+    ],
 )
 
-cc_binary(
+apollo_cc_binary(
     name = "libcyber_sample.so",
-    srcs = ["sample.cc", "sample.h"],
-    linkopts = ["-lm"],
     testonly = True,
+    srcs = [
+        "sample.cc",
+        "sample.h",
+    ],
+    linkopts = ["-lm"],
     linkshared = True,
     linkstatic = False,
     visibility = ["//visibility:private"],

@@ -1,12 +1,15 @@
 #load("//tools:cpplint.bzl", "cpplint")
-#load("//tools:apollo_package.bzl", "apollo_package", "cc_library", "cc_test")
+load("//tools:apollo_package.bzl", "apollo_cc_library", "apollo_package")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
+apollo_cc_library(
     name = "cyber_event",
     srcs = ["perf_event_cache.cc"],
-    hdrs = ["perf_event_cache.h", "perf_event.h"],
+    hdrs = [
+        "perf_event.h",
+        "perf_event_cache.h",
+    ],
     deps = [
         "//cyber:cyber_state",
         "//cyber/base:cyber_base",

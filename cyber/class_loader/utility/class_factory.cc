@@ -16,6 +16,7 @@
 #include "cyber/class_loader/utility/class_factory.h"
 
 #include <algorithm>
+#include <iostream>
 
 namespace apollo {
 namespace cyber {
@@ -32,12 +33,15 @@ AbstractClassFactoryBase::~AbstractClassFactoryBase() {}
 
 void AbstractClassFactoryBase::SetRelativeLibraryPath(
     const std::string& library_path) {
+  AERROR << " ............ adding library path " << library_path << " which should have been set just before shared library open."; 
   relative_library_path_ = library_path;
 }
 
 void AbstractClassFactoryBase::AddOwnedClassLoader(ClassLoader* loader) {
+  AERROR " <<<<<>>>>>>> adding owned class loader during register.  this would have been set just before shared library open" << loader;
   if (std::find(relative_class_loaders_.begin(), relative_class_loaders_.end(),
                 loader) == relative_class_loaders_.end()) {
+    AERROR << " did not find loader in relative_class_loaders_.  adding  " << loader; 
     relative_class_loaders_.emplace_back(loader);
   }
 }

@@ -75,7 +75,6 @@ std::shared_ptr<Base> ClassLoaderManager::CreateClassObj(
       return (class_loader->CreateClassObj<Base>(class_name));
     }
   }
-  AERROR << "Invalid class name: " << class_name;
   return std::shared_ptr<Base>();
 }
 

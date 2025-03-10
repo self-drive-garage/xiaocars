@@ -84,19 +84,19 @@ bool CommonComponentSample::Proc(const std::shared_ptr<Driver>& msg0,
 ### BUILD file
 
 ```python
-load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("@rules_cc//cc:defs.bzl", "apollo_cc_binary", "apollo_cc_library")
 #load("//tools:cpplint.bzl", "cpplint")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_binary(
+apollo_cc_binary(
     name = "libcommon_component_example.so",
     linkshared = True,
     linkstatic = False,
     deps = [":common_component_example_lib"],
 )
 
-cc_library(
+apollo_cc_library(
     name = "common_component_example_lib",
     srcs = ["common_component_example.cc"],
     hdrs = ["common_component_example.h"],

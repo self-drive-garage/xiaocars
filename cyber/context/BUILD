@@ -1,9 +1,9 @@
 #load("//tools:cpplint.bzl", "cpplint")
-##load("//tools:apollo_package.bzl", "cc_library", "cc_test", "apollo_package")
+load("//tools:apollo_package.bzl", "apollo_cc_library", "apollo_package")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
+apollo_cc_library(
     name = "cyber_context",
     srcs = [
     ],
@@ -18,8 +18,8 @@ cc_test(
     name = "cyber_context_test",
     size = "small",
     srcs = ["context_test.cc"],
-    linkstatic = True,
     linkopts = ["-lm"],
+    linkstatic = True,
     deps = [
         ":cyber_context",
         "@com_google_googletest//:gtest_main",

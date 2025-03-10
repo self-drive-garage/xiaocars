@@ -1,9 +1,9 @@
 #load("//tools:cpplint.bzl", "cpplint")
-##load("//tools:apollo_package.bzl", "cc_library", "apollo_package", "cc_test")
+load("//tools:apollo_package.bzl", "apollo_cc_library", "apollo_package")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
+apollo_cc_library(
     name = "cyber_time",
     srcs = [
         "clock.cc",
@@ -18,8 +18,8 @@ cc_library(
         "time.h",
     ],
     deps = [
-        "//cyber/common:cyber_common",
         "//cyber/base:cyber_base",
+        "//cyber/common:cyber_common",
         "//cyber/proto:run_mode_conf_cc_proto",
     ],
 )

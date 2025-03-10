@@ -1,12 +1,18 @@
 #load("//tools:cpplint.bzl", "cpplint")
-#load("//tools:apollo_package.bzl", "apollo_package", "cc_library")
+load("//tools:apollo_package.bzl", "apollo_cc_library", "apollo_package")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
+apollo_cc_library(
     name = "class_loader_utility",
-    srcs = ["class_loader_utility.cc", "class_factory.cc"],
-    hdrs = ["class_loader_utility.h", "class_factory.h"],
+    srcs = [
+        "class_factory.cc",
+        "class_loader_utility.cc",
+    ],
+    hdrs = [
+        "class_factory.h",
+        "class_loader_utility.h",
+    ],
     deps = [
         "//cyber/class_loader/shared_library",
         "//cyber/common:cyber_common",

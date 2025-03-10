@@ -6,7 +6,7 @@
 ###############################################################################
 
 module(
-    name = "core",
+    name = "apollo-orin",
     version = "0.1.0",
     compatibility_level = 1,
 )

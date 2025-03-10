@@ -1,5 +1,5 @@
 #load("//tools:cpplint.bzl", "cpplint")
-##load("//tools:apollo_package.bzl", "apollo_package", "cc_test")
+load("//tools:apollo_package.bzl", "apollo_package")
 
 cc_test(
     name = "hybrid_transceiver_test",

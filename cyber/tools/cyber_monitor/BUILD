@@ -1,24 +1,23 @@
 #load("//tools:cpplint.bzl", "cpplint")
-##load("//tools:apollo_package.bzl", "apollo_package", "cc_binary")
+load("//tools:apollo_package.bzl", "apollo_cc_binary", "apollo_package")
 
 package(default_visibility = ["//visibility:public"])
 
-
-cc_binary(
+apollo_cc_binary(
     name = "cyber_monitor",
     srcs = [
         "cyber_topology_message.cc",
+        "cyber_topology_message.h",
         "general_channel_message.cc",
+        "general_channel_message.h",
         "general_message.cc",
+        "general_message.h",
         "general_message_base.cc",
+        "general_message_base.h",
         "main.cc",
         "renderable_message.cc",
-        "screen.cc",
-        "cyber_topology_message.h",
-        "general_channel_message.h",
-        "general_message.h",
-        "general_message_base.h",
         "renderable_message.h",
+        "screen.cc",
         "screen.h",
     ],
     linkopts = ["-pthread"],

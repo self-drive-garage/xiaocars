@@ -58,7 +58,7 @@ class Transmitter : public Endpoint {
     return seq_num_.fetch_add(1, std::memory_order_relaxed);
   }
 
-  uint64_t seq_num() const { seq_num_.load(std::memory_order_relaxed); }
+  uint64_t seq_num() const { return seq_num_.load(std::memory_order_relaxed); }
 
  protected:
   MessageInfo msg_info_;

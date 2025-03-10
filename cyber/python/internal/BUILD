@@ -1,9 +1,9 @@
-##load("//tools:apollo_package.bzl", "apollo_package", "cc_binary", "cc_library", "cc_test")
+load("//tools:apollo_package.bzl", "apollo_cc_binary", "apollo_cc_library", "apollo_package")
 ##load("//tools:cpplint.bzl", "cpplint")
 #
 #package(default_visibility = ["//visibility:public"])
 #
-#cc_binary(
+#apollo_cc_binary(
 #    name = "_cyber_wrapper.so",
 #    srcs = ["py_cyber.cc"],
 #    linkshared = True,
@@ -13,7 +13,7 @@
 #    ],
 #)
 #
-#cc_library(
+#apollo_cc_library(
 #    name = "py_cyber",
 #    srcs = ["py_cyber.cc"],
 #    hdrs = ["py_cyber.h"],
@@ -36,7 +36,7 @@
 #    linkstatic = True,
 #)
 #
-#cc_binary(
+#apollo_cc_binary(
 #    name = "_cyber_record_wrapper.so",
 #    srcs = ["py_record.cc"],
 #    linkshared = True,
@@ -46,7 +46,7 @@
 #    ],
 #)
 #
-#cc_library(
+#apollo_cc_library(
 #    name = "py_record",
 #    srcs = ["py_record.cc"],
 #    hdrs = ["py_record.h"],
@@ -70,7 +70,7 @@
 #    linkstatic = True,
 #)
 #
-#cc_binary(
+#apollo_cc_binary(
 #    name = "_cyber_time_wrapper.so",
 #    srcs = ["py_time.cc"],
 #    linkshared = True,
@@ -80,7 +80,7 @@
 #    ],
 #)
 #
-#cc_library(
+#apollo_cc_library(
 #    name = "py_time",
 #    srcs = ["py_time.cc"],
 #    hdrs = ["py_time.h"],
@@ -92,7 +92,7 @@
 #    ],
 #)
 #
-#cc_binary(
+#apollo_cc_binary(
 #    name = "_cyber_timer_wrapper.so",
 #    srcs = ["py_timer.cc"],
 #    linkshared = True,
@@ -102,7 +102,7 @@
 #    ],
 #)
 #
-#cc_library(
+#apollo_cc_library(
 #    name = "py_timer",
 #    srcs = ["py_timer.cc"],
 #    hdrs = ["py_timer.h"],
@@ -113,7 +113,7 @@
 #    ],
 #)
 #
-#cc_binary(
+#apollo_cc_binary(
 #    name = "_cyber_parameter_wrapper.so",
 #    srcs = ["py_parameter.cc"],
 #    linkshared = True,
@@ -123,7 +123,7 @@
 #    ],
 #)
 #
-#cc_library(
+#apollo_cc_library(
 #    name = "py_parameter",
 #    srcs = ["py_parameter.cc"],
 #    hdrs = ["py_parameter.h"],

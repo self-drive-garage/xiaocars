@@ -1,9 +1,9 @@
-#load("//tools:apollo_package.bzl", "cc_library", "apollo_package", "cc_binary")
+load("//tools:apollo_package.bzl", "apollo_cc_binary", "apollo_cc_library", "apollo_package")
 #load("//tools:cpplint.bzl", "cpplint")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_binary(
+apollo_cc_binary(
     name = "cyber_recorder",
     srcs = [
         "main.cc",
@@ -21,7 +21,7 @@ cc_binary(
     ],
 )
 
-cc_library(
+apollo_cc_library(
     name = "recorder",
     srcs = [
         "info.cc",

@@ -38,8 +38,10 @@ std::vector<ClassLoader*> ClassLoaderManager::GetAllValidClassLoaders() {
 
 std::vector<std::string> ClassLoaderManager::GetAllValidLibPath() {
   std::vector<std::string> libpath;
+  AINFO << " >>>> >>> size of libpath_loader_map_ is " << libpath_loader_map_.size();
   for (auto& lib_class_loader : libpath_loader_map_) {
     if (lib_class_loader.second != nullptr) {
+      AINFO << " adding to list of class loaders " << lib_class_loader.first;
       libpath.emplace_back(lib_class_loader.first);
     }
   }

@@ -1,6 +1,6 @@
 #load("@rules_python//python:defs.bzl", "py_library")
 ## load("//tools/install:install.bzl", "install", "install_files")
-##load("//tools:apollo_package.bzl", "apollo_package")
+load("//tools:apollo_package.bzl", "apollo_package")
 #
 #package(default_visibility = ["//visibility:public"])
 #

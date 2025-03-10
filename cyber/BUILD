@@ -1,22 +1,22 @@
 #load("//tools:cpplint.bzl", "cpplint")
-##load("//tools:apollo_package.bzl", "cc_library", "apollo_package")
+load("//tools:apollo_package.bzl", "apollo_cc_library", "apollo_package")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
+apollo_cc_library(
     name = "cyber_binary",
     srcs = ["binary.cc"],
     hdrs = ["binary.h"],
 )
 
-cc_library(
+apollo_cc_library(
     name = "cyber_state",
     srcs = ["state.cc"],
     hdrs = ["state.h"],
     deps = ["//cyber/common:cyber_common"],
 )
 
-cc_library(
+apollo_cc_library(
     name = "cyber",
     srcs = [
         "cyber.cc",

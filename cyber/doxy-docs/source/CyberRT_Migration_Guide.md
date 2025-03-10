@@ -25,7 +25,7 @@ target_link_libraries(pb_listener ${catkin_LIBRARIES}  pb_msgs_example_proto)
 Bazel
 
 ```python
-cc_binary(
+apollo_cc_binary(
   name = "talker",
   srcs = ["talker.cc"],
   deps = [
@@ -33,7 +33,7 @@ cc_binary(
     "//cyber/examples/proto:examples_cc_proto",
     ],
   )
-cc_binary(
+apollo_cc_binary(
   name = "listener",
   srcs = ["listener.cc"],
   deps = [
@@ -43,7 +43,7 @@ cc_binary(
   )
 ```
 
-We can find the mapping easily from the 2 file snippets. For example, `pb_talker` and `src/talker.cpp` in cmake `add_executable` setting map to `name = "talker"` and `srcs = ["talker.cc"]` in BUILD file `cc_binary`.
+We can find the mapping easily from the 2 file snippets. For example, `pb_talker` and `src/talker.cpp` in cmake `add_executable` setting map to `name = "talker"` and `srcs = ["talker.cc"]` in BUILD file `apollo_cc_binary`.
 
 ### Proto
 

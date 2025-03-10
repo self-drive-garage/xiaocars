@@ -1,5 +1,5 @@
 #load("//tools/proto:proto.bzl", "py_binary")
-#load("//tools:apollo_package.bzl", "apollo_package")
+load("//tools:apollo_package.bzl", "apollo_package")
 load("@rules_proto//proto:defs.bzl", "proto_library")
 
 

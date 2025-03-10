@@ -1,5 +1,5 @@
 #load("//tools:cpplint.bzl", "cpplint")
-#load("//tools:apollo_package.bzl", "cc_binary", "cc_library", "cc_test", "apollo_package")
+load("//tools:apollo_package.bzl", "apollo_cc_binary", "apollo_cc_library", "apollo_package")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -13,7 +13,7 @@ cc_test(
     ],
 )
 
-cc_library(
+apollo_cc_library(
     name = "cyber_message",
     srcs = [
         "protobuf_factory.cc",

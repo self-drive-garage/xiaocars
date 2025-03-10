@@ -1,22 +1,24 @@
 #load("//tools:cpplint.bzl", "cpplint")
-#load("//tools:apollo_package.bzl", "apollo_package", "cc_library", "cc_test")
+load("//tools:apollo_package.bzl", "apollo_cc_library", "apollo_package")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
+apollo_cc_library(
     name = "cyber_croutine",
     srcs = [
         "croutine.cc",
         "detail/routine_context.cc",
     ] + select(
-        {"@platforms//cpu:x86_64": ["detail/swap_x86_64.S"],
-            "@platforms//cpu:aarch64": ["detail/swap_aarch64.S"],},
+        {
+            "@platforms//cpu:x86_64": ["detail/swap_x86_64.S"],
+            "@platforms//cpu:aarch64": ["detail/swap_aarch64.S"],
+        },
         no_match_error = "Please Build with a Linux aarch64 or x86_64 platform",
     ),
     hdrs = [
         "croutine.h",
-        "routine_factory.h",
         "detail/routine_context.h",
+        "routine_factory.h",
     ],
     linkopts = ["-latomic"],
     deps = [
@@ -31,11 +33,11 @@ cc_test(
     name = "croutine_test",
     size = "small",
     srcs = ["croutine_test.cc"],
+    linkstatic = True,
     deps = [
         "//cyber",
         "@com_google_googletest//:gtest_main",
     ],
-    linkstatic = True,
 )
 
 #apollo_package()

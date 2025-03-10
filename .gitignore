@@ -175,3 +175,4 @@ can_data/
 av/maps/API_KEY
 *.env
 falconview/build
+data/
