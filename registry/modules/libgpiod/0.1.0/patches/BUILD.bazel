@@ -1,0 +1,37 @@
+load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "libgpiod_srcs",
+    srcs = glob(["**"]),
+    visibility = ["//visibility:public"],
+)
+
+# Main libgpiod build with C++ bindings enabled
+configure_make(
+    name = "libgpiod",
+    configure_in_place = True,
+    configure_options = [
+        "--enable-tools",
+        "--enable-bindings-cxx",
+    ],
+    lib_source = ":libgpiod_srcs",
+    out_shared_libs = [
+        "libgpiod.so",
+    ],
+    out_static_libs = [
+        "libgpiod.a",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "cxx",
+    srcs = glob(["bindings/cxx/*.cpp"]),
+    hdrs = glob(["bindings/cxx/**/*.hpp"]),
+    includes = ["bindings/cxx/gpiodcxx/"],
+    deps = [
+        ":libgpiod",
+    ],
+)

@@ -2,8 +2,8 @@
 build --jobs=16
 build --verbose_failures
 build --keep_going
-#build --registry=https://raw.githubusercontent.com/wheelos/bazel-central-registry/fastdds-2.14.x
-#build --registry=https://bcr.bazel.build/
+build --registry=file://%workspace%/registry
+build --registry=https://bcr.bazel.build/
 
 # Enable Bzlmod for every Bazel command
 # common --enable_bzlmod

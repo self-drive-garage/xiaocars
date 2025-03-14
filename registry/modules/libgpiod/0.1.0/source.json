@@ -1,0 +1,10 @@
+{
+  "type": "archive",
+  "url": "https://mirrors.edge.kernel.org/pub/software/libs/libgpiod/libgpiod-2.2.tar.gz",
+  "integrity": "sha256-+JwhdiUPGpVjJlR564rV8ipj9C22ofQ47/xXDwJU0vU=",
+  "strip_prefix": "libgpiod-2.2",
+  "patches": {
+      "add_build_file.patch" :  "sha256-YiAnRa59D9o9rR77hmGckMVM+3ciJpiSznOXjc9A6rE="
+  },
+  "patch_strip": 0
+}

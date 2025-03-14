@@ -1,0 +1,9 @@
+# libgpiod/MODULE.bazel
+module(
+    name = "libgpiod",
+    version = "0.1.0",  # Choose a semantic version
+    compatibility_level = 1,
+)
+
+bazel_dep(name = "rules_foreign_cc", version = "0.9.0")
+bazel_dep(name = "rules_pkg", version = "0.10.1")
