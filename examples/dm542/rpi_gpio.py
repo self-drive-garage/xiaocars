@@ -2,14 +2,17 @@ import RPi.GPIO as GPIO
 import time
 
 # Define GPIO pins connected to DM542
-PUL_PIN = 20  # Replace with the actual GPIO pin number connected to PUL+
-DIR_PIN = 21  # Replace with the actual GPIO pin number connected to DIR+
+PUL_PIN = 5  # Replace with the actual GPIO pin number connected to PUL+
+DIR_PIN = 6  # Replace with the actual GPIO pin number connected to DIR+
 # ENA_PIN = 16 # Optional: Replace with the actual GPIO pin number connected to ENA+
 
 # Define motor control parameters
-STEPS_PER_REVOLUTION = 200  # Adjust based on your motor
-MICROSTEP_RESOLUTION = 16  # Example: Assuming 16 microsteps per full step (configured on DM542)
-TOTAL_STEPS = STEPS_PER_REVOLUTION * MICROSTEP_RESOLUTION
+NEMA_23_SPR = 200
+DM542_PPR = 400
+GEARBOX_RATIO = 46
+STEPS_PER_REVOLUTION = NEMA_23_SPR * DM542_PPR * GEARBOX_RATIO
+MICROSTEP_RESOLUTION = DM542_PPR / NEMA_23_SPR
+TOTAL_STEPS = STEPS_PER_REVOLUTION
 STEP_DELAY = 0.001  # Adjust to control motor speed (seconds between pulses)
 
 # Setup GPIO mode
