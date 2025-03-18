@@ -13,7 +13,8 @@ GEARBOX_RATIO = 46
 STEPS_PER_REVOLUTION = NEMA_23_SPR * DM542_PPR * GEARBOX_RATIO
 MICROSTEP_RESOLUTION = DM542_PPR / NEMA_23_SPR
 TOTAL_STEPS = STEPS_PER_REVOLUTION
-STEP_DELAY = 0.001  # Adjust to control motor speed (seconds between pulses)
+MAX_STEP_DELAY = 0.001  # Starting delay for acceleration (slower)
+MIN_STEP_DELAY = 0.00005  # Target delay (faster) - lower = more speed but requires more torque
 
 # Setup GPIO mode
 GPIO.setmode(GPIO.BCM)
@@ -38,27 +39,54 @@ def send_pulse():
     GPIO.output(PUL_PIN, GPIO.LOW)
     time.sleep(0.0000025) # Low level width not less than 2.5µs [2]
 
-def move_steps(steps, direction=True):
-    """Moves the stepper motor a specified number of steps.
+def move_steps(steps, direction=True, use_acceleration=True):
+    """Moves the stepper motor a specified number of steps with optional acceleration.
     steps: The number of microsteps to move.
     direction: True for clockwise, False for counter-clockwise (default is True).
+    use_acceleration: Whether to use acceleration and deceleration ramping.
     """
     set_direction(direction)
-    for _ in range(steps):
+
+    if not use_acceleration:
+        # Constant speed movement
+        for _ in range(steps):
+            send_pulse()
+            time.sleep(MIN_STEP_DELAY)
+        return
+
+    # Calculate acceleration and deceleration phases
+    accel_steps = min(steps // 3, 1000)  # Accelerate for 1/3 of movement or 1000 steps max
+    decel_steps = min(steps // 3, 1000)  # Decelerate for 1/3 of movement or 1000 steps max
+    constant_steps = steps - accel_steps - decel_steps
+
+    # Acceleration phase
+    for i in range(accel_steps):
         send_pulse()
-        time.sleep(STEP_DELAY)
+        delay = MAX_STEP_DELAY - (i * (MAX_STEP_DELAY - MIN_STEP_DELAY) / accel_steps)
+        time.sleep(max(delay, MIN_STEP_DELAY))
+
+    # Constant speed phase
+    for _ in range(constant_steps):
+        send_pulse()
+        time.sleep(MIN_STEP_DELAY)
+
+    # Deceleration phase
+    for i in range(decel_steps):
+        send_pulse()
+        delay = MIN_STEP_DELAY + (i * (MAX_STEP_DELAY - MIN_STEP_DELAY) / decel_steps)
+        time.sleep(delay)
 
 if __name__ == '__main__':
     try:
         # Optional: Enable the driver (if using ENA pin, typically high to enable for NPN control)
         # GPIO.output(ENA_PIN, GPIO.HIGH)
 
-        print("Moving clockwise for one revolution...")
-        move_steps(TOTAL_STEPS, True)
+        print("Moving clockwise for one revolution with acceleration...")
+        move_steps(TOTAL_STEPS, True, use_acceleration=True)
         time.sleep(1)
 
-        print("Moving counter-clockwise for half a revolution...")
-        move_steps(TOTAL_STEPS // 2, False)
+        print("Moving counter-clockwise for half a revolution at constant speed...")
+        move_steps(TOTAL_STEPS // 2, False, use_acceleration=False)
         time.sleep(1)
 
     except KeyboardInterrupt:
