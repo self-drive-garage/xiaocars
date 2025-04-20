@@ -1,0 +1,23 @@
+#load("//tools:cpplint.bzl", "cpplint")
+load("//tools:apollo_package.bzl", "apollo_cc_binary", "apollo_cc_library", "apollo_component")
+
+package(default_visibility = ["//visibility:public"])
+
+apollo_component(
+    name = "libgpiod_component.so",
+    srcs = ["gpiod_component.cc"],
+    hdrs = ["gpiod_component.h"],
+    visibility = ["//visibility:private"],
+    deps = [
+        "//cyber",
+        #        "//cyber/examples/proto:examples_cc_proto",
+    ],
+)
+
+filegroup(
+    name = "conf",
+    srcs = [
+        "dag/gpiod.dad",
+        "launch/gpiod.launch",
+    ],
+)
