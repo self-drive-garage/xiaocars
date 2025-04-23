@@ -1,5 +1,6 @@
 import RPi.GPIO as GPIO
 import time
+import argparse
 
 # Define GPIO pins connected to DM542
 PUL_PIN = 5  # Replace with the actual GPIO pin number connected to PUL+
@@ -77,16 +78,16 @@ def move_steps(steps, direction=True, use_acceleration=True):
         time.sleep(delay)
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Control stepper motor direction')
+    parser.add_argument('direction', choices=['left', 'right'], help='Direction to move the motor (left or right)')
+    args = parser.parse_args()
+
     try:
         # Optional: Enable the driver (if using ENA pin, typically high to enable for NPN control)
         # GPIO.output(ENA_PIN, GPIO.HIGH)
 
-        print("Moving clockwise for one revolution with acceleration...")
-        move_steps(TOTAL_STEPS, True, use_acceleration=True)
-        time.sleep(1)
-
-        print("Moving counter-clockwise for half a revolution at constant speed...")
-        move_steps(TOTAL_STEPS // 2, False, use_acceleration=False)
+        print(f"Moving {args.direction} for one revolution with acceleration...")
+        move_steps(TOTAL_STEPS, direction=(args.direction == 'right'), use_acceleration=True)
         time.sleep(1)
 
     except KeyboardInterrupt:
