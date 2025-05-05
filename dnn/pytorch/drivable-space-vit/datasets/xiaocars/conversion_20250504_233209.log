@@ -1,0 +1,15 @@
+2025-05-04 23:32:09,299 - INFO - Converting nuscenes dataset from /datasets/nuscenes/v1.0-mini to ./datasets/xiaocars
+2025-05-04 23:32:09,299 - INFO - Using pointers to original image files instead of copying images
+2025-05-04 23:32:09,299 - INFO - Using nuScenes dataset version: v1.0-mini
+2025-05-04 23:32:09,299 - INFO - Using nuScenes CAN data from: /datasets/nuscenes/v1.0-mini
+2025-05-04 23:32:09,768 - WARNING - CAN bus data not available: Error: CAN bus directory not found: /datasets/nuscenes/v1.0-mini/can_bus. Please download it from https://www.nuscenes.org/download
+2025-05-04 23:32:09,768 - INFO - Converting nuScenes dataset from /datasets/nuscenes/v1.0-mini to ./datasets/xiaocars
+2025-05-04 23:32:10,007 - INFO - Processing train split with 700 scenes
+2025-05-04 23:32:10,027 - INFO - Saved 6 sequences for train split
+2025-05-04 23:32:10,027 - INFO - Processing val split with 150 scenes
+2025-05-04 23:32:10,039 - INFO - Saved 4 sequences for val split
+2025-05-04 23:32:10,039 - INFO - Processing test split with 150 scenes
+2025-05-04 23:32:10,040 - INFO - Saved 0 sequences for test split
+2025-05-04 23:32:10,040 - INFO - Dataset conversion completed
+2025-05-04 23:32:10,040 - INFO - Metadata and ego motion data saved to ./datasets/xiaocars
+2025-05-04 23:32:10,040 - INFO - Image files remain in their original locations and are referenced by absolute paths

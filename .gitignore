@@ -176,3 +176,4 @@ av/maps/API_KEY
 *.env
 falconview/build
 data/
+.venv/
