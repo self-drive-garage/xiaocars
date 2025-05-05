@@ -177,3 +177,11 @@ av/maps/API_KEY
 falconview/build
 data/
 .venv/
+.ipynb_checkpoints/
+*.log
+*.log.*
+*.log.*.*
+*.log.*.*.*
+*.log.*.*.*.*
+*.log.*.*.*.*.*
+*.log.*.*.*.*.*.*
