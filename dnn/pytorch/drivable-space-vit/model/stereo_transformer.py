@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import math
+from pathlib import Path
 
 from .patch_embed import PatchEmbed
 from .transformer_encoder_layer import TransformerEncoderLayer
@@ -11,16 +12,20 @@ from .temporal_transfomer_layer import TemporalTransformerLayer
 from .ego_motion_encoder import EgoMotionEncoder
 from .drivable_space_decoder import DrivableSpaceDecoder
 
-# Constants for model architecture
-IMG_SIZE = 224  # Input image size for ViT
-PATCH_SIZE = 16  # Patch size for ViT
-NUM_CHANNELS = 3  # RGB images
-EMBED_DIM = 768  # Embedding dimension
-NUM_HEADS = 12  # Number of attention heads
-NUM_LAYERS = 12  # Number of transformer layers
-MLP_RATIO = 4  # Expansion ratio for MLP
-DROPOUT = 0.1  # Dropout probability
-EGO_MOTION_DIM = 6  # Ego motion dimensions (speed, acceleration, steering, etc.)
+def get_default_model_config():
+    """Return default model configuration"""
+    return {
+        'img_size': 224,
+        'patch_size': 16,
+        'num_channels': 3,
+        'embed_dim': 768,
+        'num_heads': 12,
+        'num_layers': 12,
+        'mlp_ratio': 4,
+        'dropout': 0.1,
+        'attn_dropout': 0.1,
+        'ego_motion_dim': 6,
+    }
 
 def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False):
     """
@@ -92,52 +97,72 @@ class StereoTransformer(nn.Module):
     """
     def __init__(
         self,
-        img_size=IMG_SIZE,
-        patch_size=PATCH_SIZE,
-        in_chans=NUM_CHANNELS,
-        embed_dim=EMBED_DIM,
-        depth=NUM_LAYERS,
-        num_heads=NUM_HEADS,
-        mlp_ratio=MLP_RATIO,
-        dropout=DROPOUT,
-        attn_dropout=DROPOUT,
-        ego_motion_dim=EGO_MOTION_DIM,
+        img_size=None,
+        patch_size=None,
+        in_chans=None,
+        embed_dim=None,
+        depth=None,
+        num_heads=None,
+        mlp_ratio=None,
+        dropout=None,
+        attn_dropout=None,
+        ego_motion_dim=None,
+        config=None,
     ):
         super().__init__()
-        self.img_size = img_size
-        self.patch_size = patch_size
-        self.embed_dim = embed_dim
-        self.num_patches = (img_size // patch_size) ** 2
+        
+        # Get model configuration
+        model_config = get_default_model_config()
+        if config is not None and 'model' in config:
+            # Update with provided config
+            for key, value in config['model'].items():
+                model_config[key] = value
+        
+        # Use provided parameters if given, otherwise use config
+        self.img_size = img_size if img_size is not None else model_config['img_size']
+        self.patch_size = patch_size if patch_size is not None else model_config['patch_size']
+        in_chans = in_chans if in_chans is not None else model_config['num_channels']
+        self.embed_dim = embed_dim if embed_dim is not None else model_config['embed_dim']
+        depth = depth if depth is not None else model_config['num_layers']
+        num_heads = num_heads if num_heads is not None else model_config['num_heads']
+        mlp_ratio = mlp_ratio if mlp_ratio is not None else model_config['mlp_ratio']
+        dropout_value = dropout if dropout is not None else model_config['dropout']
+        attn_dropout_value = attn_dropout if attn_dropout is not None else model_config['attn_dropout']
+        ego_motion_dim = ego_motion_dim if ego_motion_dim is not None else model_config['ego_motion_dim']
+        
+        self.num_patches = (self.img_size // self.patch_size) ** 2
         
         # Patch embedding for left and right images
         self.patch_embed = PatchEmbed(
-            img_size=img_size,
-            patch_size=patch_size,
+            img_size=self.img_size,
+            patch_size=self.patch_size,
             in_chans=in_chans,
-            embed_dim=embed_dim,
+            embed_dim=self.embed_dim,
+            config=config,
         )
         
         # Position embeddings for spatial transformer
         self.pos_embed = nn.Parameter(
-            torch.zeros(1, self.num_patches, embed_dim),
+            torch.zeros(1, self.num_patches, self.embed_dim),
             requires_grad=False,
         )
         
         # CLS token for each view
-        self.cls_token_left = nn.Parameter(torch.zeros(1, 1, embed_dim))
-        self.cls_token_right = nn.Parameter(torch.zeros(1, 1, embed_dim))
+        self.cls_token_left = nn.Parameter(torch.zeros(1, 1, self.embed_dim))
+        self.cls_token_right = nn.Parameter(torch.zeros(1, 1, self.embed_dim))
         
         # Dropout after pos embed
-        self.pos_drop = nn.Dropout(dropout)
+        self.pos_drop = nn.Dropout(dropout_value)
         
         # Spatial transformer layers for left and right images separately
         self.spatial_transformer_layers = nn.ModuleList([
             TransformerEncoderLayer(
-                dim=embed_dim,
+                dim=self.embed_dim,
                 num_heads=num_heads,
                 mlp_ratio=mlp_ratio,
-                dropout=dropout,
-                attn_dropout=attn_dropout,
+                dropout=dropout_value,
+                attn_dropout=attn_dropout_value,
+                config=config,
             )
             for _ in range(depth // 3)  # Use 1/3 of layers for spatial processing
         ])
@@ -145,11 +170,12 @@ class StereoTransformer(nn.Module):
         # Cross-view transformer layers for stereo fusion
         self.cross_view_transformer_layers = nn.ModuleList([
             CrossViewTransformerLayer(
-                dim=embed_dim,
+                dim=self.embed_dim,
                 num_heads=num_heads,
                 mlp_ratio=mlp_ratio,
-                dropout=dropout,
-                attn_dropout=attn_dropout,
+                dropout=dropout_value,
+                attn_dropout=attn_dropout_value,
+                config=config,
             )
             for _ in range(depth // 3)  # Use 1/3 of layers for cross-view fusion
         ])
@@ -157,11 +183,12 @@ class StereoTransformer(nn.Module):
         # Temporal transformer layers
         self.temporal_transformer_layers = nn.ModuleList([
             TemporalTransformerLayer(
-                dim=embed_dim,
+                dim=self.embed_dim,
                 num_heads=num_heads,
                 mlp_ratio=mlp_ratio,
-                dropout=dropout,
-                attn_dropout=attn_dropout,
+                dropout=dropout_value,
+                attn_dropout=attn_dropout_value,
+                config=config,
             )
             for _ in range(depth // 3)  # Use 1/3 of layers for temporal modeling
         ])
@@ -169,31 +196,33 @@ class StereoTransformer(nn.Module):
         # Ego motion encoder
         self.ego_motion_encoder = EgoMotionEncoder(
             ego_motion_dim=ego_motion_dim,
-            embed_dim=embed_dim,
-            dropout=dropout,
+            embed_dim=self.embed_dim,
+            dropout=dropout_value,
+            config=config,
         )
         
         # Final LayerNorm
-        self.norm = nn.LayerNorm(embed_dim)
+        self.norm = nn.LayerNorm(self.embed_dim)
         
         # Decoder for drivable space segmentation
         self.drivable_space_decoder = DrivableSpaceDecoder(
-            embed_dim=embed_dim,
-            img_size=img_size,
-            patch_size=patch_size,
-            dropout=dropout,
+            embed_dim=self.embed_dim,
+            img_size=self.img_size,
+            patch_size=self.patch_size,
+            dropout=dropout_value,
+            config=config,
         )
         
         # Image reconstruction decoder (for self-supervised training)
         self.image_reconstruction_decoder = nn.Sequential(
-            nn.Linear(embed_dim, embed_dim // 2),
+            nn.Linear(self.embed_dim, self.embed_dim // 2),
             nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(embed_dim // 2, patch_size * patch_size * in_chans),
+            nn.Dropout(dropout_value),
+            nn.Linear(self.embed_dim // 2, self.patch_size * self.patch_size * in_chans),
         )
         
         # Future prediction head (for self-supervised training)
-        self.future_prediction_head = nn.Linear(embed_dim, embed_dim)
+        self.future_prediction_head = nn.Linear(self.embed_dim, self.embed_dim)
         
         # Initialize weights
         self.apply(self._init_weights)

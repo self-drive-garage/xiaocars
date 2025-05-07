@@ -35,30 +35,80 @@ drivable-space-vit/
 │   ├── cosine_scheduler_with_warmup.py  # LR scheduler
 │   └── model.py                         # Main entry point for model usage
 │
-├── train_example.py                     # Example training script
+├── config.yaml                          # Configuration file for model and training parameters
+├── train.py                             # Training script
+├── convert_checkpoint.py                # Convert old checkpoints to new format
 ├── inference_example.py                 # Example inference script
 └── README.md                            # This file
+```
+
+## Configuration
+
+The model now uses a YAML configuration file (`config.yaml`) to manage all model and training parameters. This provides several advantages:
+- Centralized configuration management
+- Easy experiment tracking
+- Consistent parameter usage across components
+- Support for different configurations via config files
+
+The configuration is organized into sections:
+
+```yaml
+# Model architecture parameters
+model:
+  img_size: 224           # Input image size for ViT
+  patch_size: 16          # Patch size for ViT
+  num_channels: 3         # RGB images
+  # ...
+
+# Dataset parameters
+dataset:
+  seq_len: 5              # Number of frames in sequence
+  batch_size: 16          # Batch size for training
+  # ...
+
+# Training parameters
+training:
+  epochs: 100             # Number of epochs to train
+  lr: 1e-4                # Learning rate
+  # ...
+
+# Logging and saving parameters
+logging:
+  log_interval: 10        # Logging interval in steps
+  # ...
+```
+
+### Converting Old Checkpoints
+
+If you have checkpoints from a previous version of the model, you can convert them to work with the new configuration system using:
+
+```bash
+python convert_checkpoint.py --input old_checkpoint.pth --output new_checkpoint.pth --config config.yaml
 ```
 
 ## Model Usage
 
 ### Training
 
-Use the `train_example.py` script to train the model:
+Use the `train.py` script to train the model:
 
 ```bash
-python train_example.py \
+python train.py \
+    --config config.yaml \            # Path to configuration file
+    --data_dir /path/to/dataset \     # Path to dataset directory
+    --output_dir ./outputs            # Path to save outputs
+```
+
+You can override specific configuration values via command-line arguments:
+
+```bash
+python train.py \
+    --config config.yaml \
     --data_dir /path/to/dataset \
     --output_dir ./outputs \
-    --batch_size 16 \
-    --epochs 100 \
-    --lr 1e-4 \
-    --warmup_epochs 10 \
-    --img_size 224 \
-    --patch_size 16 \
-    --embed_dim 768 \
-    --depth 12 \
-    --num_heads 12
+    --batch_size 32 \                 # Override batch_size from config
+    --epochs 200 \                    # Override epochs from config
+    --lr 2e-4                         # Override learning rate from config
 ```
 
 ### Inference
@@ -82,13 +132,17 @@ Use the model in your own code:
 import torch
 from model.model import create_model, load_model_from_checkpoint
 
-# Create a new model
+# Create a new model using config file
+model = create_model(config_path='config.yaml')
+
+# Or create with custom parameters (will override config)
 model = create_model(
     img_size=224,
     patch_size=16,
     embed_dim=768,
     depth=12,
-    num_heads=12
+    num_heads=12,
+    config_path='config.yaml'  # Default parameters from config
 )
 
 # Or load from checkpoint
@@ -157,6 +211,7 @@ The metadata JSON files should have the following format:
 - PyTorch 1.8+
 - torchvision
 - numpy
+- PyYAML
 - PIL
 - matplotlib (for visualization)
 - tqdm
