@@ -1,8 +1,11 @@
-#torch>=2.5.0
-#torchvision>=0.16.0
-#numpy>=1.20.0
+torch>=2.5.0
+torchvision>=0.16.0
 matplotlib>=3.5.0
 Pillow>=9.0.0
 einops>=0.4.0
-nuscenes-devkit==1.1.11
+omegaconf>=2.3.0
+hydra-core>=1.3.0       
+
+#numpy>=1.20.0
+#nuscenes-devkit==1.1.11
 #pip install git+https://github.com/argoverse/av2-api#egg=av2

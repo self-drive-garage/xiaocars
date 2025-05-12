@@ -33,6 +33,249 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+def load_config(config_path):
+    """Load configuration from YAML file"""
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    return config
+
+
+def update_config_with_args(config, args):
+    """Update config with command line arguments"""
+    # Update model config
+    if args.img_size is not None:
+        config['model']['img_size'] = args.img_size
+    if args.patch_size is not None:
+        config['model']['patch_size'] = args.patch_size
+    if args.embed_dim is not None:
+        config['model']['embed_dim'] = args.embed_dim
+    if args.num_layers is not None:
+        config['model']['num_layers'] = args.num_layers
+    if args.num_heads is not None:
+        config['model']['num_heads'] = args.num_heads
+    if args.mlp_ratio is not None:
+        config['model']['mlp_ratio'] = args.mlp_ratio
+    if args.dropout is not None:
+        config['model']['dropout'] = args.dropout
+        config['model']['attn_dropout'] = args.dropout
+    
+    # Update dataset config
+    if args.seq_len is not None:
+        config['dataset']['seq_len'] = args.seq_len
+    if args.batch_size is not None:
+        config['dataset']['batch_size'] = args.batch_size
+    if args.num_workers is not None:
+        config['dataset']['num_workers'] = args.num_workers
+    
+    # Update training config
+    if args.epochs is not None:
+        config['training']['epochs'] = args.epochs
+    if args.lr is not None:
+        config['training']['lr'] = args.lr
+    if args.weight_decay is not None:
+        config['training']['weight_decay'] = args.weight_decay
+    if args.warmup_epochs is not None:
+        config['training']['warmup_epochs'] = args.warmup_epochs
+    if args.min_lr is not None:
+        config['training']['min_lr'] = args.min_lr
+    if args.gradient_accumulation is not None:
+        config['training']['gradient_accumulation'] = args.gradient_accumulation
+    if args.mixed_precision is not None:
+        config['training']['mixed_precision'] = args.mixed_precision
+    if args.reconstruction_weight is not None:
+        config['training']['reconstruction_weight'] = args.reconstruction_weight
+    if args.consistency_weight is not None:
+        config['training']['consistency_weight'] = args.consistency_weight
+    if args.future_weight is not None:
+        config['training']['future_weight'] = args.future_weight
+    
+    # Update logging config
+    if args.log_interval is not None:
+        config['logging']['log_interval'] = args.log_interval
+    if args.save_interval is not None:
+        config['logging']['save_interval'] = args.save_interval
+    if args.eval_interval is not None:
+        config['logging']['eval_interval'] = args.eval_interval
+    if args.visualize_every is not None:
+        config['logging']['visualize_every'] = args.visualize_every
+    if args.num_viz_samples is not None:
+        config['logging']['num_viz_samples'] = args.num_viz_samples
+    
+    return config
+
+
+def seed_everything(seed):
+    """Set seed for reproducibility"""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+def setup_environment(args):
+    # Set random seed
+    seed_everything(args.seed)
+    
+    # Check if CUDA is available
+    if args.device == 'cuda' and not torch.cuda.is_available():
+        logger.warning("CUDA requested but not available, falling back to CPU")
+        args.device = 'cpu'
+    
+    return args
+
+
+def visualize_predictions(model, data_loader, device, output_dir, num_samples=10):
+    """Visualize model predictions"""
+    # Importing visualization libraries here to avoid dependencies if not used
+    import matplotlib.pyplot as plt
+    from torchvision.utils import make_grid
+    
+    model.eval()
+    
+    samples_visualized = 0
+    with torch.no_grad():
+        for batch in data_loader:
+            if samples_visualized >= num_samples:
+                break
+                
+            # Move batch to device
+            batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+            
+            # Forward pass
+            outputs = model(batch)
+            
+            # Visualize each sample in the batch
+            for i in range(min(batch['left_images'].size(0), num_samples - samples_visualized)):
+                # Get current sample
+                left_img = batch['left_images'][i, -1]  # Last frame in sequence
+                right_img = batch['right_images'][i, -1]
+                
+                # Get reconstructions if available
+                left_recon = outputs.get('left_reconstructed', None)
+                right_recon = outputs.get('right_reconstructed', None)
+                
+                # Get drivable space prediction if available
+                drivable_space = outputs.get('drivable_space', None)
+                
+                # Create figure
+                fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+                
+                # Plot original left and right images
+                axes[0, 0].imshow(left_img.permute(1, 2, 0).cpu().numpy())
+                axes[0, 0].set_title('Left Image')
+                axes[0, 0].axis('off')
+                
+                axes[0, 1].imshow(right_img.permute(1, 2, 0).cpu().numpy())
+                axes[0, 1].set_title('Right Image')
+                axes[0, 1].axis('off')
+                
+                # Plot reconstructions if available
+                if left_recon is not None:
+                    axes[1, 0].imshow(left_recon[i].permute(1, 2, 0).cpu().numpy())
+                    axes[1, 0].set_title('Left Reconstruction')
+                    axes[1, 0].axis('off')
+                
+                if right_recon is not None:
+                    axes[1, 1].imshow(right_recon[i].permute(1, 2, 0).cpu().numpy())
+                    axes[1, 1].set_title('Right Reconstruction')
+                    axes[1, 1].axis('off')
+                
+                # Plot drivable space prediction if available
+                if drivable_space is not None:
+                    drivable_map = drivable_space[i].squeeze().cpu().numpy()
+                    axes[0, 2].imshow(drivable_map, cmap='viridis')
+                    axes[0, 2].set_title('Drivable Space Prediction')
+                    axes[0, 2].axis('off')
+                
+                # Save figure
+                fig.tight_layout()
+                plt.savefig(output_dir / f'sample_{samples_visualized}.png')
+                plt.close(fig)
+                
+                samples_visualized += 1
+                if samples_visualized >= num_samples:
+                    break
+
+
+def train_one_epoch(model, loader, optimizer, loss_fn, device, epoch, config, scaler=None):
+    model.train()
+    running_loss = 0.0
+    total_steps = len(loader)
+    start_time = time.time()
+    
+    # Use tqdm for progress bar
+    pbar = tqdm(enumerate(loader), total=total_steps, desc=f"Epoch {epoch+1}")
+    
+    for step, batch in pbar:
+        # Move batch to device
+        batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+        
+        # Forward pass with mixed precision if enabled
+        if scaler is not None:
+            with torch.cuda.amp.autocast():
+                outputs = model(batch)
+                loss, loss_dict = loss_fn(outputs, batch)
+                
+                # Scale loss for gradient accumulation if needed
+                if config['training']['gradient_accumulation'] > 1:
+                    loss = loss / config['training']['gradient_accumulation']
+                
+            # Backward pass with scaler
+            scaler.scale(loss).backward()
+            
+            # Update weights if gradient accumulation steps reached
+            if (step + 1) % config['training']['gradient_accumulation'] == 0:
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
+        else:
+            # Standard forward pass
+            outputs = model(batch)
+            loss, loss_dict = loss_fn(outputs, batch)
+            
+            # Scale loss for gradient accumulation if needed
+            if config['training']['gradient_accumulation'] > 1:
+                loss = loss / config['training']['gradient_accumulation']
+                
+            # Backward pass and optimize
+            loss.backward()
+            
+            # Update weights if gradient accumulation steps reached
+            if (step + 1) % config['training']['gradient_accumulation'] == 0:
+                optimizer.step()
+                optimizer.zero_grad()
+        
+        # Update metrics
+        running_loss += loss.item() * (config['training']['gradient_accumulation'] if config['training']['gradient_accumulation'] > 1 else 1)
+        
+        # Update progress bar
+        pbar.set_postfix({
+            'loss': loss.item() * (config['training']['gradient_accumulation'] if config['training']['gradient_accumulation'] > 1 else 1),
+            'lr': optimizer.param_groups[0]['lr']
+        })
+        
+        # Log progress at intervals
+        if step % config['logging']['log_interval'] == 0:
+            elapsed = time.time() - start_time
+            logger.info(
+                f"Epoch: [{epoch+1}/{config['training']['epochs']}][{step}/{total_steps}] "
+                f"Loss: {loss.item() * (config['training']['gradient_accumulation'] if config['training']['gradient_accumulation'] > 1 else 1):.4f} "
+                f"Time: {elapsed:.2f}s "
+                f"LR: {optimizer.param_groups[0]['lr']:.6f}"
+            )
+            
+            # Log individual loss components
+            for loss_name, loss_value in loss_dict.items():
+                logger.info(f"  {loss_name}: {loss_value:.4f}")
+    
+    # Return average loss
+    return running_loss / total_steps
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Train Drivable Space ViT model')
     
@@ -116,167 +359,40 @@ def parse_args():
     
     return parser.parse_args()
 
-def load_config(config_path):
-    """Load configuration from YAML file"""
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-    return config
 
-def update_config_with_args(config, args):
-    """Update config with command line arguments"""
-    # Update model config
-    if args.img_size is not None:
-        config['model']['img_size'] = args.img_size
-    if args.patch_size is not None:
-        config['model']['patch_size'] = args.patch_size
-    if args.embed_dim is not None:
-        config['model']['embed_dim'] = args.embed_dim
-    if args.num_layers is not None:
-        config['model']['num_layers'] = args.num_layers
-    if args.num_heads is not None:
-        config['model']['num_heads'] = args.num_heads
-    if args.mlp_ratio is not None:
-        config['model']['mlp_ratio'] = args.mlp_ratio
-    if args.dropout is not None:
-        config['model']['dropout'] = args.dropout
-        config['model']['attn_dropout'] = args.dropout
-    
-    # Update dataset config
-    if args.seq_len is not None:
-        config['dataset']['seq_len'] = args.seq_len
-    if args.batch_size is not None:
-        config['dataset']['batch_size'] = args.batch_size
-    if args.num_workers is not None:
-        config['dataset']['num_workers'] = args.num_workers
-    
-    # Update training config
-    if args.epochs is not None:
-        config['training']['epochs'] = args.epochs
-    if args.lr is not None:
-        config['training']['lr'] = args.lr
-    if args.weight_decay is not None:
-        config['training']['weight_decay'] = args.weight_decay
-    if args.warmup_epochs is not None:
-        config['training']['warmup_epochs'] = args.warmup_epochs
-    if args.min_lr is not None:
-        config['training']['min_lr'] = args.min_lr
-    if args.gradient_accumulation is not None:
-        config['training']['gradient_accumulation'] = args.gradient_accumulation
-    if args.mixed_precision is not None:
-        config['training']['mixed_precision'] = args.mixed_precision
-    if args.reconstruction_weight is not None:
-        config['training']['reconstruction_weight'] = args.reconstruction_weight
-    if args.consistency_weight is not None:
-        config['training']['consistency_weight'] = args.consistency_weight
-    if args.future_weight is not None:
-        config['training']['future_weight'] = args.future_weight
-    
-    # Update logging config
-    if args.log_interval is not None:
-        config['logging']['log_interval'] = args.log_interval
-    if args.save_interval is not None:
-        config['logging']['save_interval'] = args.save_interval
-    if args.eval_interval is not None:
-        config['logging']['eval_interval'] = args.eval_interval
-    if args.visualize_every is not None:
-        config['logging']['visualize_every'] = args.visualize_every
-    if args.num_viz_samples is not None:
-        config['logging']['num_viz_samples'] = args.num_viz_samples
-    
-    return config
-
-def seed_everything(seed):
-    """Set seed for reproducibility"""
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
-def setup_environment(args):
-    # Set random seed
-    seed_everything(args.seed)
-    
-    # Check if CUDA is available
-    if args.device == 'cuda' and not torch.cuda.is_available():
-        logger.warning("CUDA requested but not available, falling back to CPU")
-        args.device = 'cpu'
-    
-    return args
-
-def visualize_predictions(model, data_loader, device, output_dir, num_samples=10):
-    """Visualize model predictions"""
-    # Importing visualization libraries here to avoid dependencies if not used
-    import matplotlib.pyplot as plt
-    from torchvision.utils import make_grid
-    
+def validate(model, loader, loss_fn, device, epoch, config):
     model.eval()
+    val_loss = 0.0
+    total_steps = len(loader)
     
-    samples_visualized = 0
+    # Use tqdm for progress bar
+    pbar = tqdm(loader, total=total_steps, desc=f"Validation {epoch+1}")
+    
     with torch.no_grad():
-        for batch in data_loader:
-            if samples_visualized >= num_samples:
-                break
-                
+        for batch in pbar:
             # Move batch to device
             batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
             
             # Forward pass
             outputs = model(batch)
+            loss, loss_dict = loss_fn(outputs, batch)
             
-            # Visualize each sample in the batch
-            for i in range(min(batch['left_images'].size(0), num_samples - samples_visualized)):
-                # Get current sample
-                left_img = batch['left_images'][i, -1]  # Last frame in sequence
-                right_img = batch['right_images'][i, -1]
-                
-                # Get reconstructions if available
-                left_recon = outputs.get('left_reconstructed', None)
-                right_recon = outputs.get('right_reconstructed', None)
-                
-                # Get drivable space prediction if available
-                drivable_space = outputs.get('drivable_space', None)
-                
-                # Create figure
-                fig, axes = plt.subplots(2, 3, figsize=(18, 12))
-                
-                # Plot original left and right images
-                axes[0, 0].imshow(left_img.permute(1, 2, 0).cpu().numpy())
-                axes[0, 0].set_title('Left Image')
-                axes[0, 0].axis('off')
-                
-                axes[0, 1].imshow(right_img.permute(1, 2, 0).cpu().numpy())
-                axes[0, 1].set_title('Right Image')
-                axes[0, 1].axis('off')
-                
-                # Plot reconstructions if available
-                if left_recon is not None:
-                    axes[1, 0].imshow(left_recon[i].permute(1, 2, 0).cpu().numpy())
-                    axes[1, 0].set_title('Left Reconstruction')
-                    axes[1, 0].axis('off')
-                
-                if right_recon is not None:
-                    axes[1, 1].imshow(right_recon[i].permute(1, 2, 0).cpu().numpy())
-                    axes[1, 1].set_title('Right Reconstruction')
-                    axes[1, 1].axis('off')
-                
-                # Plot drivable space prediction if available
-                if drivable_space is not None:
-                    drivable_map = drivable_space[i].squeeze().cpu().numpy()
-                    axes[0, 2].imshow(drivable_map, cmap='viridis')
-                    axes[0, 2].set_title('Drivable Space Prediction')
-                    axes[0, 2].axis('off')
-                
-                # Save figure
-                fig.tight_layout()
-                plt.savefig(output_dir / f'sample_{samples_visualized}.png')
-                plt.close(fig)
-                
-                samples_visualized += 1
-                if samples_visualized >= num_samples:
-                    break
+            # Update metrics
+            val_loss += loss.item()
+            
+            # Update progress bar
+            pbar.set_postfix({'loss': loss.item()})
+    
+    # Average validation loss
+    val_loss = val_loss / total_steps
+    
+    logger.info(f"Validation Epoch: [{epoch+1}/{config['training']['epochs']}] Loss: {val_loss:.4f}")
+    
+    # Log individual loss components
+    for loss_name, loss_value in loss_dict.items():
+        logger.info(f"  Validation {loss_name}: {loss_value:.4f}")
+    
+    return val_loss
 
 @hydra.main(config_path=".", config_name="config")
 def main(hydra_config: DictConfig):
@@ -539,114 +655,6 @@ def main(hydra_config: DictConfig):
     
     logger.info("Training complete!")
     writer.close()
-
-def train_one_epoch(model, loader, optimizer, loss_fn, device, epoch, config, scaler=None):
-    model.train()
-    running_loss = 0.0
-    total_steps = len(loader)
-    start_time = time.time()
-    
-    # Use tqdm for progress bar
-    pbar = tqdm(enumerate(loader), total=total_steps, desc=f"Epoch {epoch+1}")
-    
-    for step, batch in pbar:
-        # Move batch to device
-        batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
-        
-        # Forward pass with mixed precision if enabled
-        if scaler is not None:
-            with torch.cuda.amp.autocast():
-                outputs = model(batch)
-                loss, loss_dict = loss_fn(outputs, batch)
-                
-                # Scale loss for gradient accumulation if needed
-                if config['training']['gradient_accumulation'] > 1:
-                    loss = loss / config['training']['gradient_accumulation']
-                
-            # Backward pass with scaler
-            scaler.scale(loss).backward()
-            
-            # Update weights if gradient accumulation steps reached
-            if (step + 1) % config['training']['gradient_accumulation'] == 0:
-                scaler.step(optimizer)
-                scaler.update()
-                optimizer.zero_grad()
-        else:
-            # Standard forward pass
-            outputs = model(batch)
-            loss, loss_dict = loss_fn(outputs, batch)
-            
-            # Scale loss for gradient accumulation if needed
-            if config['training']['gradient_accumulation'] > 1:
-                loss = loss / config['training']['gradient_accumulation']
-                
-            # Backward pass and optimize
-            loss.backward()
-            
-            # Update weights if gradient accumulation steps reached
-            if (step + 1) % config['training']['gradient_accumulation'] == 0:
-                optimizer.step()
-                optimizer.zero_grad()
-        
-        # Update metrics
-        running_loss += loss.item() * (config['training']['gradient_accumulation'] if config['training']['gradient_accumulation'] > 1 else 1)
-        
-        # Update progress bar
-        pbar.set_postfix({
-            'loss': loss.item() * (config['training']['gradient_accumulation'] if config['training']['gradient_accumulation'] > 1 else 1),
-            'lr': optimizer.param_groups[0]['lr']
-        })
-        
-        # Log progress at intervals
-        if step % config['logging']['log_interval'] == 0:
-            elapsed = time.time() - start_time
-            logger.info(
-                f"Epoch: [{epoch+1}/{config['training']['epochs']}][{step}/{total_steps}] "
-                f"Loss: {loss.item() * (config['training']['gradient_accumulation'] if config['training']['gradient_accumulation'] > 1 else 1):.4f} "
-                f"Time: {elapsed:.2f}s "
-                f"LR: {optimizer.param_groups[0]['lr']:.6f}"
-            )
-            
-            # Log individual loss components
-            for loss_name, loss_value in loss_dict.items():
-                logger.info(f"  {loss_name}: {loss_value:.4f}")
-    
-    # Return average loss
-    return running_loss / total_steps
-
-def validate(model, loader, loss_fn, device, epoch, config):
-    model.eval()
-    val_loss = 0.0
-    total_steps = len(loader)
-    
-    # Use tqdm for progress bar
-    pbar = tqdm(loader, total=total_steps, desc=f"Validation {epoch+1}")
-    
-    with torch.no_grad():
-        for batch in pbar:
-            # Move batch to device
-            batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
-            
-            # Forward pass
-            outputs = model(batch)
-            loss, loss_dict = loss_fn(outputs, batch)
-            
-            # Update metrics
-            val_loss += loss.item()
-            
-            # Update progress bar
-            pbar.set_postfix({'loss': loss.item()})
-    
-    # Average validation loss
-    val_loss = val_loss / total_steps
-    
-    logger.info(f"Validation Epoch: [{epoch+1}/{config['training']['epochs']}] Loss: {val_loss:.4f}")
-    
-    # Log individual loss components
-    for loss_name, loss_value in loss_dict.items():
-        logger.info(f"  Validation {loss_name}: {loss_value:.4f}")
-    
-    return val_loss
 
 if __name__ == "__main__":
     main()
