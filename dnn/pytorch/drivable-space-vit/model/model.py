@@ -16,7 +16,7 @@ def get_default_model_config():
         'mlp_ratio': 4,
         'dropout': 0.1,
         'attn_dropout': 0.1,
-        'ego_motion_dim': 6,
+        'ego_motion_dim': 12,
     }
 
 def get_default_training_config():

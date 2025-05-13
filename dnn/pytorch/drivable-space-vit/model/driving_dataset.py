@@ -166,22 +166,22 @@ class DrivingDataset(Dataset):
             
             # Define which fields to extract and provide defaults
             ego_motion_fields = {
-                'speed': 0.0,
-                'acceleration': {'x': 0.0, 'y': 0.0, 'z': 0.0},
-                'steering_angle': 0.0,
-                'angular_velocity': {'x': 0.0, 'y': 0.0, 'z': 0.0}
+                'position': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+                'orientation': {'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0},
+                'acceleration': {'x': 0.0, 'y': 0.0},
+                'velocity': {'x': 0.0, 'y': 0.0},
+                'angular_velocity': {'roll': 0.0, 'yaw': 0.0}
             }
 
             # Extract available data with defaults for missing fields
             ego_motion_values = []
             for field, default in ego_motion_fields.items():
-                if field in frame:
-                    if isinstance(default, dict):
-                        for subfield, subdefault in default.items():
-                            value = frame.get(field, {}).get(subfield, subdefault)
-                            ego_motion_values.append(value)
-                    else:
-                        ego_motion_values.append(frame.get(field, default))
+                if isinstance(default, dict):
+                    for subfield, subdefault in default.items():
+                        value = frame.get(field, {}).get(subfield, subdefault)
+                        ego_motion_values.append(value)
+                else:
+                    ego_motion_values.append(frame.get(field, default))
 
             frame_ego_motion = torch.tensor(ego_motion_values, dtype=torch.float32)
             ego_motion.append(frame_ego_motion)
@@ -189,7 +189,7 @@ class DrivingDataset(Dataset):
         # Stack data
         left_images = torch.stack(left_images)   # (seq_len, C, H, W)
         right_images = torch.stack(right_images) # (seq_len, C, H, W)
-        ego_motion = torch.stack(ego_motion)     # (seq_len, ego_motion_dim)
+        ego_motion = torch.stack(ego_motion)     # (seq_len, ego_motion_dim=12)
         timestamps = torch.tensor(timestamps, dtype=torch.float64)  # (seq_len,)
         
         return {

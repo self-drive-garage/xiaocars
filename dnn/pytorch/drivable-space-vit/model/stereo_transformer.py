@@ -9,8 +9,9 @@ from .patch_embed import PatchEmbed
 from .transformer_encoder_layer import TransformerEncoderLayer
 from .cross_view_transformer_layer import CrossViewTransformerLayer
 from .temporal_transfomer_layer import TemporalTransformerLayer
-from .ego_motion_encoder import EgoMotionEncoder
+from .ego_motion_encoder import EgoMotionEncoder, MotionGuidedAttention
 from .drivable_space_decoder import DrivableSpaceDecoder
+from .future_predictor import MotionGuidedFuturePredictor
 
 def get_default_model_config():
     """Return default model configuration"""
@@ -24,7 +25,7 @@ def get_default_model_config():
         'mlp_ratio': 4,
         'dropout': 0.1,
         'attn_dropout': 0.1,
-        'ego_motion_dim': 6,
+        'ego_motion_dim': 12,
     }
 
 def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False):
@@ -201,6 +202,12 @@ class StereoTransformer(nn.Module):
             config=config,
         )
         
+        # Motion-guided attention for integrating ego motion with visual features
+        self.motion_attention = MotionGuidedAttention(
+            embed_dim=self.embed_dim,
+            num_heads=num_heads
+        )
+        
         # Final LayerNorm
         self.norm = nn.LayerNorm(self.embed_dim)
         
@@ -221,8 +228,13 @@ class StereoTransformer(nn.Module):
             nn.Linear(self.embed_dim // 2, self.patch_size * self.patch_size * in_chans),
         )
         
-        # Future prediction head (for self-supervised training)
-        self.future_prediction_head = nn.Linear(self.embed_dim, self.embed_dim)
+        # Enhanced future prediction with motion guidance
+        self.future_prediction_head = MotionGuidedFuturePredictor(
+            embed_dim=self.embed_dim * 2,  # 2x embed_dim for combined left/right CLS
+            ego_motion_dim=ego_motion_dim,
+            num_heads=num_heads,
+            dropout=dropout_value
+        )
         
         # Initialize weights
         self.apply(self._init_weights)
@@ -322,14 +334,24 @@ class StereoTransformer(nn.Module):
         left_features = torch.stack(left_features_seq, dim=1)  # (B, T, 1+N, E)
         right_features = torch.stack(right_features_seq, dim=1)  # (B, T, 1+N, E)
         
-        # Integrate ego motion if provided
+        # Integrate ego motion if provided using our enhanced approach
         if ego_motion is not None:
+            # Encode ego motion
             ego_features = self.ego_motion_encoder(ego_motion)  # (B, T, E)
-            ego_features = ego_features.unsqueeze(2)  # (B, T, 1, E)
             
-            # Add ego motion features to the CLS tokens
-            left_features[:, :, 0:1, :] = left_features[:, :, 0:1, :] + ego_features
-            right_features[:, :, 0:1, :] = right_features[:, :, 0:1, :] + ego_features
+            # Use ego motion for motion-guided attention 
+            # Apply motion-guided attention to visual features
+            left_motion_attn = self.motion_attention(left_features, ego_features)  # (B, T, N, 1)
+            right_motion_attn = self.motion_attention(right_features, ego_features)  # (B, T, N, 1)
+            
+            # Apply attention weights to features with residual connection
+            left_features = left_features * left_motion_attn + left_features
+            right_features = right_features * right_motion_attn + right_features
+            
+            # Add ego motion features to CLS tokens for explicit integration
+            ego_features_cls = ego_features.unsqueeze(2)  # (B, T, 1, E)
+            left_features[:, :, 0:1, :] = left_features[:, :, 0:1, :] + ego_features_cls
+            right_features[:, :, 0:1, :] = right_features[:, :, 0:1, :] + ego_features_cls
         
         # Reshape for temporal transformer
         # Combine left and right features for joint temporal processing
@@ -386,9 +408,22 @@ class StereoTransformer(nn.Module):
         outputs = {}
         
         if task == 'drivable_space' or task == 'all':
-            # Use left camera view for drivable space prediction
+            # Extract motion context for drivable space prediction
+            if ego_motion is not None:
+                # Use the last timestamp's ego motion as context
+                motion_context = ego_motion[:, -1]  # (B, ego_motion_dim)
+                # Encode it to feature space
+                motion_context = self.ego_motion_encoder(motion_context.unsqueeze(1)).squeeze(1)  # (B, embed_dim)
+            else:
+                motion_context = None
+                
+            # Use left camera view for drivable space prediction with motion context
             # Skip the CLS token for patch-based prediction
-            drivable_space = self.drivable_space_decoder(left_features[:, 1:])  # (B, 1, H, W)
+            drivable_space = self.drivable_space_decoder(
+                left_features[:, 1:],  # Remove CLS token
+                motion_context
+            )  # (B, 1, H, W)
+            
             outputs['drivable_space'] = drivable_space
         
         if task == 'reconstruction' or task == 'all':
@@ -425,8 +460,15 @@ class StereoTransformer(nn.Module):
             outputs['right_reconstructed'] = right_reconstructed
         
         if task == 'future_prediction' or task == 'all':
-            # Predict future features for self-supervised training
-            future_prediction = self.future_prediction_head(cls_features[:, -1])  # (B, 2*E)
+            # Enhanced future prediction with motion guidance
+            if ego_motion is not None:
+                # Use the enhanced future predictor that incorporates ego motion
+                future_prediction = self.future_prediction_head(cls_features, ego_motion)  # (B, 2*E)
+            else:
+                # Fallback to simple prediction if no ego motion data
+                future_prediction = self.future_prediction_head(cls_features, 
+                                                              torch.zeros_like(cls_features[:, :, :ego_motion_dim]))
+            
             outputs['future_prediction'] = future_prediction
         
         return outputs

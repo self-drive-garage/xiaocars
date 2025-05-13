@@ -71,7 +71,7 @@ def convert_checkpoint(input_path, output_path, config_path):
             'mlp_ratio': 4,
             'dropout': 0.1,
             'attn_dropout': 0.1,
-            'ego_motion_dim': 6,
+            'ego_motion_dim': 12,
         }
     
     # Update model_config with values from config file

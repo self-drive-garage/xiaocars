@@ -11,7 +11,7 @@ model:
   mlp_ratio: 4            # Expansion ratio for MLP
   dropout: 0.1            # Dropout probability
   attn_dropout: 0.1       # Attention dropout probability
-  ego_motion_dim: 6       # Ego motion dimensions (speed, acceleration, steering, etc.)
+  ego_motion_dim: 12      # Ego motion dimensions (position, orientation, acceleration, velocity, angular velocity)
 
 # Dataset parameters
 dataset:
