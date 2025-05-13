@@ -55,6 +55,18 @@ class FixedSensorDataloader(SensorDataloader):
         result = self.__getitem__(self._ptr)
         self._ptr += 1
         return result
+    
+    def get_item_range(self, start_idx, end_idx):
+        """Get a range of items from the dataset.
+        
+        Args:
+            start_idx: Starting index (inclusive)
+            end_idx: Ending index (exclusive)
+            
+        Returns:
+            List of data items
+        """
+        return [self.__getitem__(i) for i in range(start_idx, min(end_idx, self.num_sweeps))]
 
 def ensure_directory(path):
     """Ensure that a directory exists, creating it if necessary."""
@@ -150,7 +162,146 @@ def save_metadata_to_parquet(metadata_entries, output_root, split_name, append=F
     logger.info(f"Saved metadata for {split_name} split with {len(metadata_entries)} stereo pairs to {parquet_file}")
     return parquet_file
 
-def convert_argoverse2(argoverse_root, output_root, splits=None, img_size=None, num_workers=4, save_frequency=100):
+def process_batch(batch_data, log_pose_history, stereo_pairs, split_name, argoverse_root):
+    """Process a batch of data to extract pose information.
+    
+    Args:
+        batch_data: List of data items from the dataset
+        log_pose_history: Dictionary to store pose history by log ID
+        stereo_pairs: Dictionary to store stereo image pairs
+        split_name: Name of the dataset split
+        argoverse_root: Path to Argoverse dataset root
+        
+    Returns:
+        Set of processed log IDs
+    """
+    processed_log_ids = set()
+    
+    for datum in batch_data:
+        try:
+            sweep = datum.sweep
+            annotations = datum.annotations
+            log_id = datum.log_id
+            processed_log_ids.add(log_id)  # Keep track of unique log IDs
+            timestamp_city_SE3_ego_dict = datum.timestamp_city_SE3_ego_dict
+            synchronized_imagery = datum.synchronized_imagery
+            
+            if synchronized_imagery is None:
+                continue
+            
+            # Store image data for both cameras at this timestamp
+            timestamp_key = f"{log_id}_{sweep.timestamp_ns}"
+            
+            for cam_name, cam in synchronized_imagery.items():
+                if cam_name not in (StereoCameras.STEREO_FRONT_LEFT.value, StereoCameras.STEREO_FRONT_RIGHT.value):
+                    continue
+                
+                if (
+                    cam.timestamp_ns in timestamp_city_SE3_ego_dict
+                    and sweep.timestamp_ns in timestamp_city_SE3_ego_dict
+                ):
+                    # Get the SE3 transformation for this timestamp
+                    city_SE3_ego_cam_t = timestamp_city_SE3_ego_dict[cam.timestamp_ns]
+                    
+                    # Extract rotation and translation from SE3
+                    rotation = city_SE3_ego_cam_t.rotation
+                    translation = city_SE3_ego_cam_t.translation
+                    
+                    # Get the image path
+                    image_filename = f"{cam.timestamp_ns}.jpg"
+                    image_path = os.path.join(f"{argoverse_root}/{split_name}/{log_id}/sensors/cameras/{cam_name}/", image_filename)
+                    
+                    # Store image path by camera type
+                    stereo_pairs[timestamp_key][cam_name] = image_path
+                    
+                    # Create pose entry
+                    pose_entry = {
+                        'timestamp': cam.timestamp_ns,
+                        'translation': translation.tolist(),
+                        'rotation': [
+                            [rotation[0, 0], rotation[0, 1], rotation[0, 2]],
+                            [rotation[1, 0], rotation[1, 1], rotation[1, 2]],
+                            [rotation[2, 0], rotation[2, 1], rotation[2, 2]]
+                        ],
+                        'image_path': image_path,
+                        'log_id': log_id,
+                        'camera': cam_name
+                    }
+                    
+                    # Add to pose history for this log
+                    log_pose_history[log_id].append(pose_entry)
+        except Exception as e:
+            logger.error(f"Error processing log {log_id}: {str(e)}")
+            logger.debug(traceback.format_exc())
+    
+    return processed_log_ids
+
+def generate_metadata_entries(stereo_pairs, log_pose_history, ego_motion_by_log, log_ids=None):
+    """Generate metadata entries from stereo pairs and pose history.
+    
+    Args:
+        stereo_pairs: Dictionary of stereo image pairs
+        log_pose_history: Dictionary of pose history by log ID
+        ego_motion_by_log: Dictionary of ego motion features by log ID
+        log_ids: Optional list of log IDs to process (for parallel processing)
+        
+    Returns:
+        List of metadata entries
+    """
+    metadata_entries = []
+    
+    # Filter stereo pairs by log ID if specified
+    pairs_to_process = {}
+    if log_ids:
+        for timestamp_key, cameras in stereo_pairs.items():
+            log_id = timestamp_key.split('_')[0]
+            if log_id in log_ids:
+                pairs_to_process[timestamp_key] = cameras
+    else:
+        pairs_to_process = stereo_pairs
+    
+    for timestamp_key, cameras in pairs_to_process.items():
+        try:
+            log_id, sweep_timestamp = timestamp_key.split('_')
+            
+            left_image_path = cameras[StereoCameras.STEREO_FRONT_LEFT.value]
+            right_image_path = cameras[StereoCameras.STEREO_FRONT_RIGHT.value]
+            
+            # Find the ego motion features for one of the cameras (they should be very similar)
+            # We'll use the left camera's timestamp for ego motion
+            ego_features = None
+            
+            for pose in log_pose_history[log_id]:
+                if pose['camera'] == StereoCameras.STEREO_FRONT_LEFT.value and pose['image_path'] == left_image_path:
+                    timestamp = pose['timestamp']
+                    if log_id in ego_motion_by_log and timestamp in ego_motion_by_log[log_id]:
+                        ego_features = ego_motion_by_log[log_id][timestamp]
+                        break
+            
+            if ego_features is None:
+                continue  # Skip if we can't find ego motion features
+            
+            # Create the metadata entry with both image paths
+            metadata_entry = {
+                'log_id': log_id,
+                'timestamp': int(sweep_timestamp),
+                'left_image_path': left_image_path,
+                'right_image_path': right_image_path,
+                'translation': ego_features['translation'],
+                'rotation': ego_features['rotation'],
+                'velocity': ego_features['velocity'],
+                'acceleration': ego_features['acceleration'],
+                'angular_velocity': ego_features['angular_velocity']
+            }
+            
+            metadata_entries.append(metadata_entry)
+            
+        except Exception as e:
+            logger.error(f"Error creating metadata entry for {timestamp_key}: {str(e)}")
+    
+    return metadata_entries
+
+def convert_argoverse2(argoverse_root, output_root, splits=None, img_size=None, num_workers=4, save_frequency=100, batch_size=500):
     """
     Convert Argoverse 2 dataset with proper ego motion extraction.
     
@@ -161,6 +312,7 @@ def convert_argoverse2(argoverse_root, output_root, splits=None, img_size=None, 
         img_size: Optional tuple (width, height) to resize images
         num_workers: Number of parallel workers
         save_frequency: Number of entries to process before saving to parquet (to prevent data loss)
+        batch_size: Number of log items to process in each batch
     """
     split_name = "val"
     start_time = datetime.now()
@@ -174,7 +326,7 @@ def convert_argoverse2(argoverse_root, output_root, splits=None, img_size=None, 
     
     # Store all frames with their metadata
     metadata_entries = []
-    entries_since_last_save = 0
+    total_entries = 0
     # Store per-log pose history for calculating ego motion
     log_pose_history = defaultdict(list)
     # Store image paths by log_id and timestamp
@@ -195,180 +347,79 @@ def convert_argoverse2(argoverse_root, output_root, splits=None, img_size=None, 
             logger.error("Please check that the dataset path is correct and contains valid Argoverse 2 data")
             return
 
-        # First pass: collect all poses with their timestamps and image paths
-        # Use a try-except inside the loop to handle individual iteration errors
+        total_sweeps = dataset.num_sweeps
+        logger.info(f"Found {total_sweeps} sweeps in the dataset")
+        
+        # Calculate how many batches to process
+        num_batches = (total_sweeps + batch_size - 1) // batch_size
         processed_log_ids = set()
-
-        # #raise exception(dataset.num_logs)
-        for log_idx, datum in enumerate(track(dataset, f"Processing {split_name} data...")):
-            try:
-                sweep = datum.sweep
-                annotations = datum.annotations
-                log_id = datum.log_id
-                processed_log_ids.add(log_id)  # Keep track of unique log IDs
-                timestamp_city_SE3_ego_dict = datum.timestamp_city_SE3_ego_dict
-                synchronized_imagery = datum.synchronized_imagery
+        
+        # Process dataset in batches
+        for batch_idx in range(num_batches):
+            start_idx = batch_idx * batch_size
+            end_idx = min((batch_idx + 1) * batch_size, total_sweeps)
+            
+            logger.info(f"Processing batch {batch_idx + 1}/{num_batches} (items {start_idx} to {end_idx-1})")
+            
+            # Get a batch of data
+            batch_data = dataset.get_item_range(start_idx, end_idx)
+            
+            # Process this batch and collect poses
+            batch_log_ids = process_batch(batch_data, log_pose_history, stereo_pairs, split_name, argoverse_root)
+            processed_log_ids.update(batch_log_ids)
+            
+            # If we've processed enough logs in this batch, compute ego motion and save data
+            if len(batch_log_ids) > 0:
+                # Compute ego motion for the logs in this batch
+                batch_ego_motion = {}
+                for log_id in batch_log_ids:
+                    try:
+                        poses = log_pose_history[log_id]
+                        # Skip if no poses for this log
+                        if not poses:
+                            continue
+                            
+                        # Convert rotation matrices to quaternions for easier computation
+                        for pose in poses:
+                            r = Rotation.from_matrix(pose['rotation'])
+                            # Store as [x, y, z, w] format
+                            pose['rotation'] = r.as_quat().tolist()  # [x, y, z, w]
+                        
+                        # Compute ego motion features
+                        ego_motion_features = compute_ego_motion_features(poses)
+                        batch_ego_motion[log_id] = ego_motion_features
+                    except Exception as e:
+                        logger.error(f"Error computing ego motion for log {log_id}: {str(e)}")
+                        logger.debug(traceback.format_exc())
                 
-                if synchronized_imagery is None:
-                    continue
+                # Generate metadata entries for this batch
+                batch_entries = generate_metadata_entries(stereo_pairs, log_pose_history, batch_ego_motion, batch_log_ids)
                 
-                # Store image data for both cameras at this timestamp
-                timestamp_key = f"{log_id}_{sweep.timestamp_ns}"
+                # Save this batch if we have entries
+                if batch_entries:
+                    save_metadata_to_parquet(batch_entries, output_root, split_name, append=(total_entries > 0))
+                    total_entries += len(batch_entries)
+                    logger.info(f"Saved {len(batch_entries)} entries from batch {batch_idx + 1}. Total entries so far: {total_entries}")
                 
-                for cam_name, cam in synchronized_imagery.items():
-                    if cam_name not in (StereoCameras.STEREO_FRONT_LEFT.value, StereoCameras.STEREO_FRONT_RIGHT.value):
-                        continue
+                # Clear memory for this batch of logs
+                for log_id in batch_log_ids:
+                    if log_id in batch_ego_motion:
+                        del batch_ego_motion[log_id]
                     
-                    if (
-                        cam.timestamp_ns in timestamp_city_SE3_ego_dict
-                        and sweep.timestamp_ns in timestamp_city_SE3_ego_dict
-                    ):
-                        # Get the SE3 transformation for this timestamp
-                        city_SE3_ego_cam_t = timestamp_city_SE3_ego_dict[cam.timestamp_ns]
-                        
-                        # Extract rotation and translation from SE3
-                        rotation = city_SE3_ego_cam_t.rotation
-                        translation = city_SE3_ego_cam_t.translation
-                        
-                        # Get the image path
-                        image_filename = f"{cam.timestamp_ns}.jpg"
-                        image_path = os.path.join(f"{argoverse_root}/{split_name}/{log_id}/sensors/cameras/{cam_name}/", image_filename)
-                        
-                        # Store image path by camera type
-                        stereo_pairs[timestamp_key][cam_name] = image_path
-                        
-                        # Create pose entry
-                        pose_entry = {
-                            'timestamp': cam.timestamp_ns,
-                            'translation': translation.tolist(),
-                            'rotation': [
-                                [rotation[0, 0], rotation[0, 1], rotation[0, 2]],
-                                [rotation[1, 0], rotation[1, 1], rotation[1, 2]],
-                                [rotation[2, 0], rotation[2, 1], rotation[2, 2]]
-                            ],
-                            'image_path': image_path,
-                            'log_id': log_id,
-                            'camera': cam_name
-                        }
-                        
-                        # Add to pose history for this log
-                        log_pose_history[log_id].append(pose_entry)
-            except Exception as e:
-                logger.error(f"Error processing log at index {log_idx}: {str(e)}")
-                logger.debug(traceback.format_exc())
-                # Continue to next log even if this one fails
-                #raise e
-
-        logger.info(f"Collected pose data for {len(log_pose_history)} logs in {split_name} split")
-        logger.info(f"Processed {len(processed_log_ids)} unique log IDs:")
-        
-        # Second pass: compute ego motion features for each log
-        ego_motion_by_log = {}
-        for log_id, poses in log_pose_history.items():
-            try:
-                # Convert rotation matrices to quaternions for easier computation
-                for pose in poses:
-                    r = Rotation.from_matrix(pose['rotation'])
-                    # Store as [x, y, z, w] format
-                    pose['rotation'] = r.as_quat().tolist()  # [x, y, z, w]
-                
-                # Compute ego motion features
-                ego_motion_features = compute_ego_motion_features(poses)
-                ego_motion_by_log[log_id] = ego_motion_features
-            except Exception as e:
-                logger.error(f"Error computing ego motion for log {log_id}: {str(e)}")
-                logger.debug(traceback.format_exc())
-                # Continue to next log even if this one fails
-                continue
-        
-        # Third pass: create metadata entries with stereo pairs
-        temp_metadata_batch = []
-        for timestamp_key, cameras in stereo_pairs.items():
-            try:
-                log_id, sweep_timestamp = timestamp_key.split('_')
-                
-                left_image_path = cameras[StereoCameras.STEREO_FRONT_LEFT.value]
-                right_image_path = cameras[StereoCameras.STEREO_FRONT_RIGHT.value]
-                
-                # Find the ego motion features for one of the cameras (they should be very similar)
-                # We'll use the left camera's timestamp for ego motion
-                ego_features = None
-                
-                for pose in log_pose_history[log_id]:
-                    if pose['camera'] == StereoCameras.STEREO_FRONT_LEFT.value and pose['image_path'] == left_image_path:
-                        timestamp = pose['timestamp']
-                        if log_id in ego_motion_by_log and timestamp in ego_motion_by_log[log_id]:
-                            ego_features = ego_motion_by_log[log_id][timestamp]
-                            break
-                
-                if ego_features is None:
-                    continue  # Skip if we can't find ego motion features
-                
-                # Create the metadata entry with both image paths
-                metadata_entry = {
-                    'log_id': log_id,
-                    'timestamp': int(sweep_timestamp),
-                    'left_image_path': left_image_path,
-                    'right_image_path': right_image_path,
-                    'translation': ego_features['translation'],
-                    'rotation': ego_features['rotation'],
-                    'velocity': ego_features['velocity'],
-                    'acceleration': ego_features['acceleration'],
-                    'angular_velocity': ego_features['angular_velocity']
-                }
-                
-                temp_metadata_batch.append(metadata_entry)
-                entries_since_last_save += 1
-                
-                # Save intermediate results to prevent data loss
-                if entries_since_last_save >= save_frequency:
-                    # Append this batch to parquet file
-                    save_metadata_to_parquet(temp_metadata_batch, output_root, split_name, append=len(metadata_entries) > 0)
-                    # Update the total metadata entries
-                    metadata_entries.extend(temp_metadata_batch)
-                    # Reset the batch
-                    temp_metadata_batch = []
-                    entries_since_last_save = 0
-                    logger.info(f"Saved intermediate batch. Total entries so far: {len(metadata_entries)}")
-                
-            except Exception as e:
-                logger.error(f"Error creating metadata entry for {timestamp_key}: {str(e)}")
-                # Continue to next entry even if this one fails
-
-        # Save any remaining entries
-        if temp_metadata_batch:
-            save_metadata_to_parquet(temp_metadata_batch, output_root, split_name, append=len(metadata_entries) > 0)
-            metadata_entries.extend(temp_metadata_batch)
-            logger.info(f"Saved final batch. Total entries: {len(metadata_entries)}")
+            # Report progress
+            logger.info(f"Completed {batch_idx + 1}/{num_batches} batches ({(batch_idx + 1) * 100 / num_batches:.1f}%)")
 
     except Exception as e:
         logger.error(f"Error during processing: {str(e)}")
         logger.error(f"Traceback: {traceback.format_exc()}")
-        # If we have pending entries, save them before exiting
-        if entries_since_last_save > 0:
-            save_metadata_to_parquet(temp_metadata_batch, output_root, split_name, append=len(metadata_entries) > 0)
-            logger.info(f"Saved {entries_since_last_save} entries during exception handling")
-        #raise e
     finally:
-        # Always save whatever data we've collected, even if there was an error
-        if metadata_entries:
-            parquet_file = os.path.join(output_root, f"{split_name}_metadata.parquet")
-            if os.path.exists(parquet_file):
-                logger.info(f"Successfully saved a total of {len(metadata_entries)} entries to {parquet_file}")
-            else:
-                logger.error("No parquet file was created. Check logs for errors.")
-        else:
-            logger.error("No metadata entries were collected. Check logs for errors.")
-    
-    end_time = datetime.now()
-    
-    # Print final stats
-    logger.info("=" * 50)
-    logger.info("PROCESSING SUMMARY")
-    logger.info("=" * 50)
-    logger.info(f"Dataset path: {argoverse_root}")
-    logger.info(f"Total unique log IDs processed: {len(processed_log_ids)}")
-    logger.info(f"Total stereo pairs extracted: {len(metadata_entries)}")
-    logger.info(f"Conversion completed in {end_time - start_time}")
-    logger.info("=" * 50)
+        # Report final stats
+        logger.info("=" * 50)
+        logger.info("PROCESSING SUMMARY")
+        logger.info("=" * 50)
+        logger.info(f"Dataset path: {argoverse_root}")
+        logger.info(f"Total unique log IDs processed: {len(processed_log_ids)}")
+        logger.info(f"Total stereo pairs extracted: {total_entries}")
+        logger.info(f"Conversion completed in {datetime.now() - start_time}")
+        logger.info("=" * 50)
         
