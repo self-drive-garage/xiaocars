@@ -20,6 +20,9 @@ from scipy.spatial.transform import Rotation
 from av2.utils.typing import NDArrayByte, NDArrayInt
 from collections import defaultdict
 import traceback
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 try:
     from av2.datasets.sensor.constants import StereoCameras
@@ -121,15 +124,33 @@ def compute_ego_motion_features(poses):
     
     return ego_motion_features
 
-def save_metadata(metadata_entries, output_root, split_name):
-    """Helper function to save metadata to a file."""
-    metadata_file = os.path.join(output_root, f"{split_name}_metadata.json")
-    with open(metadata_file, 'w') as f:
-        json.dump(metadata_entries, f, indent=2)
-    logger.info(f"Saved metadata for {split_name} split with {len(metadata_entries)} stereo pairs to {metadata_file}")
-    return metadata_file
+def save_metadata_to_parquet(metadata_entries, output_root, split_name, append=False):
+    """Helper function to save metadata to a parquet file."""
+    parquet_file = os.path.join(output_root, f"{split_name}_metadata.parquet")
+    
+    # Convert list of dictionaries to pandas DataFrame
+    df = pd.DataFrame(metadata_entries)
+    
+    # Handle list-type columns properly for parquet
+    for col in df.columns:
+        if df[col].apply(lambda x: isinstance(x, list)).any():
+            # Convert list columns to string representation for now
+            # This approach keeps the original structure and can be parsed back
+            df[col] = df[col].apply(lambda x: str(x) if isinstance(x, list) else x)
+    
+    if append and os.path.exists(parquet_file):
+        # Read existing data
+        existing_df = pd.read_parquet(parquet_file)
+        # Append new data
+        df = pd.concat([existing_df, df], ignore_index=True)
+    
+    # Save to parquet
+    df.to_parquet(parquet_file, index=False)
+    
+    logger.info(f"Saved metadata for {split_name} split with {len(metadata_entries)} stereo pairs to {parquet_file}")
+    return parquet_file
 
-def convert_argoverse2(argoverse_root, output_root, splits=None, img_size=None, num_workers=4):
+def convert_argoverse2(argoverse_root, output_root, splits=None, img_size=None, num_workers=4, save_frequency=100):
     """
     Convert Argoverse 2 dataset with proper ego motion extraction.
     
@@ -139,6 +160,7 @@ def convert_argoverse2(argoverse_root, output_root, splits=None, img_size=None, 
         splits: Dictionary mapping 'train', 'val', 'test' to lists of log IDs
         img_size: Optional tuple (width, height) to resize images
         num_workers: Number of parallel workers
+        save_frequency: Number of entries to process before saving to parquet (to prevent data loss)
     """
     split_name = "val"
     start_time = datetime.now()
@@ -150,10 +172,9 @@ def convert_argoverse2(argoverse_root, output_root, splits=None, img_size=None, 
     # Define which cameras to use
     cam_names = (StereoCameras.STEREO_FRONT_LEFT, StereoCameras.STEREO_FRONT_RIGHT)
     
-    # Process each split
-    # for split_name in ['train', 'val']:
     # Store all frames with their metadata
     metadata_entries = []
+    entries_since_last_save = 0
     # Store per-log pose history for calculating ego motion
     log_pose_history = defaultdict(list)
     # Store image paths by log_id and timestamp
@@ -261,6 +282,7 @@ def convert_argoverse2(argoverse_root, output_root, splits=None, img_size=None, 
                 continue
         
         # Third pass: create metadata entries with stereo pairs
+        temp_metadata_batch = []
         for timestamp_key, cameras in stereo_pairs.items():
             try:
                 log_id, sweep_timestamp = timestamp_key.split('_')
@@ -295,22 +317,46 @@ def convert_argoverse2(argoverse_root, output_root, splits=None, img_size=None, 
                     'angular_velocity': ego_features['angular_velocity']
                 }
                 
-                metadata_entries.append(metadata_entry)
+                temp_metadata_batch.append(metadata_entry)
+                entries_since_last_save += 1
+                
+                # Save intermediate results to prevent data loss
+                if entries_since_last_save >= save_frequency:
+                    # Append this batch to parquet file
+                    save_metadata_to_parquet(temp_metadata_batch, output_root, split_name, append=len(metadata_entries) > 0)
+                    # Update the total metadata entries
+                    metadata_entries.extend(temp_metadata_batch)
+                    # Reset the batch
+                    temp_metadata_batch = []
+                    entries_since_last_save = 0
+                    logger.info(f"Saved intermediate batch. Total entries so far: {len(metadata_entries)}")
+                
             except Exception as e:
                 logger.error(f"Error creating metadata entry for {timestamp_key}: {str(e)}")
-                
                 # Continue to next entry even if this one fails
-                #raise e
+
+        # Save any remaining entries
+        if temp_metadata_batch:
+            save_metadata_to_parquet(temp_metadata_batch, output_root, split_name, append=len(metadata_entries) > 0)
+            metadata_entries.extend(temp_metadata_batch)
+            logger.info(f"Saved final batch. Total entries: {len(metadata_entries)}")
 
     except Exception as e:
         logger.error(f"Error during processing: {str(e)}")
         logger.error(f"Traceback: {traceback.format_exc()}")
+        # If we have pending entries, save them before exiting
+        if entries_since_last_save > 0:
+            save_metadata_to_parquet(temp_metadata_batch, output_root, split_name, append=len(metadata_entries) > 0)
+            logger.info(f"Saved {entries_since_last_save} entries during exception handling")
         #raise e
     finally:
         # Always save whatever data we've collected, even if there was an error
         if metadata_entries:
-            metadata_file = save_metadata(metadata_entries, output_root, split_name)
-            logger.info(f"Successfully saved {len(metadata_entries)} entries to {metadata_file}")
+            parquet_file = os.path.join(output_root, f"{split_name}_metadata.parquet")
+            if os.path.exists(parquet_file):
+                logger.info(f"Successfully saved a total of {len(metadata_entries)} entries to {parquet_file}")
+            else:
+                logger.error("No parquet file was created. Check logs for errors.")
         else:
             logger.error("No metadata entries were collected. Check logs for errors.")
     
