@@ -15,23 +15,22 @@ model:
 
 # Dataset parameters
 dataset:
-  seq_len: 5              # Updated: Number of consecutive frames to process
+  seq_len: 3              # Number of frames used by the model for one sample
   batch_size: 16          # Batch size for training
   num_workers: 8          # Number of worker processes for data loading
-  random_sequence: true   # Updated: Enable random sequence sampling for training
+  random_sequence: true   # Enable random sequence sampling for training
   cache_images: false     # Whether to cache images in memory
   temporal:
     stride: 1             # Number of frames to skip between sequences
     overlap: 0            # Number of overlapping frames between sequences
-    max_gap: 0.1          # Maximum allowed time gap between consecutive frames (in seconds)
-    min_frames: 5         # Minimum frames required in a sequence
-    max_frames: 50        # Maximum frames in a sequence
+    max_gap: 0.15         # Maximum allowed time gap between consecutive frames (in seconds)
+                          # 0.15s allows for some variation from the expected 0.1s (10Hz)
     log_handling:
       min_log_frames: 10  # Minimum frames required in a log
       max_log_frames: 1000  # Maximum frames to use from a log
     validation:
-      stride: 5           # Larger stride for validation to avoid overlap
-      max_gap: 0.05       # Stricter gap requirement for validation
+      stride: 5           # Larger stride for validation
+      max_gap: 0.12       # Stricter gap requirement for validation (closer to 10Hz)
 
 # Training parameters
 training:

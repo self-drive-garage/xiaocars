@@ -22,15 +22,23 @@ def get_default_config():
             'img_size': 224,
         },
         'dataset': {
-            'seq_len': 5,
+            'seq_len': 5,              # Number of frames used by the model for one sample
             'batch_size': 16,
             'num_workers': 8,
             'random_sequence': True,
             'cache_images': False,
             'temporal': {
-                'stride': 1,
-                'overlap': 0,
-                'max_gap': 0.1,
+                'stride': 1,           # Number of frames to skip between sequences
+                'overlap': 0,          # Number of overlapping frames between sequences
+                'max_gap': 0.1,        # Maximum allowed time gap between consecutive frames (in seconds)
+                'log_handling': {
+                    'min_log_frames': 10,  # Minimum frames required in a log
+                    'max_log_frames': 1000  # Maximum frames to use from a log
+                },
+                'validation': {
+                    'stride': 5,       # Larger stride for validation
+                    'max_gap': 0.05    # Stricter gap requirement for validation
+                }
             }
         }
     }
@@ -64,14 +72,29 @@ class DrivingDataset(Dataset):
                 model_config = config['model']
         
         # Use provided parameters if given, otherwise use config, fallback to defaults
-        self.min_frames = dataset_config.get('min_frames', default_config['dataset']['min_frames'])
         self.seq_len = seq_len if seq_len is not None else dataset_config.get('seq_len', default_config['dataset']['seq_len'])
         self.img_size = img_size if img_size is not None else model_config.get('img_size', default_config['model']['img_size'])
         self.random_sequence = random_sequence if random_sequence is not None else dataset_config.get('random_sequence', default_config['dataset']['random_sequence'])
-        if self.random_sequence is True:  # Only randomize for training
-            self.random_sequence = self.random_sequence and split == 'train'
-        self.is_train = split == 'train'
         self.cache_images = cache_images if cache_images is not None else dataset_config.get('cache_images', default_config['dataset']['cache_images'])
+        
+        # Get temporal parameters
+        temporal_config = dataset_config.get('temporal', default_config['dataset']['temporal'])
+        self.temporal_stride = temporal_config.get('stride', 1)
+        self.max_gap = temporal_config.get('max_gap', 0.1)
+        self.min_log_frames = temporal_config.get('log_handling', {}).get('min_log_frames', 10)
+        self.max_log_frames = temporal_config.get('log_handling', {}).get('max_log_frames', 1000)
+        
+        # Use validation-specific parameters if in validation mode
+        if split == 'val' or split == 'test':
+            validation_config = temporal_config.get('validation', {})
+            self.temporal_stride = validation_config.get('stride', self.temporal_stride)
+            self.max_gap = validation_config.get('max_gap', self.max_gap)
+        
+        # Only randomize for training
+        self.is_train = split == 'train'
+        if self.random_sequence is True:
+            self.random_sequence = self.is_train
+        
         self.image_cache = {}  # Dictionary to store loaded images
         
         # Default transform if none provided
@@ -116,13 +139,13 @@ class DrivingDataset(Dataset):
             valid_frames = []
             for i in range(len(group)):
                 if i > 0:
-                    time_diff = group.iloc[i]['timestamp'] - group.iloc[i-1]['timestamp']
+                    time_diff = (group.iloc[i]['timestamp'] - group.iloc[i-1]['timestamp']) / 1e9  # Convert ns to seconds
                     if time_diff <= 0:
                         logger.warning(f"Non-monotonic timestamps in log {log_id} at index {i}")
                         continue
-                    # if time_diff > self.max_gap:
-                    #     logger.warning(f"Large time gap in log {log_id} at index {i}: {time_diff:.2f}s")
-                    #     continue
+                    if time_diff > self.max_gap:
+                        logger.warning(f"Large time gap in log {log_id} at index {i}: {time_diff:.3f}s (expected ~0.1s for 10Hz)")
+                        continue
                 
                 valid_frames.append({
                     'timestamp': group.iloc[i]['timestamp'],
@@ -135,7 +158,11 @@ class DrivingDataset(Dataset):
                     'angular_velocity': group.iloc[i]['angular_velocity']
                 })
             
-            if len(valid_frames) >= self.min_frames:
+            # Only keep logs with enough frames for at least one sequence
+            if len(valid_frames) >= self.seq_len:
+                # Limit the number of frames per log if specified
+                if self.max_log_frames > 0:
+                    valid_frames = valid_frames[:self.max_log_frames]
                 self.log_sequences[log_id] = valid_frames
         
         # Create flat list of valid sequences for indexing
