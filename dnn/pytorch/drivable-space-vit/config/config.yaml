@@ -11,15 +11,27 @@ model:
   mlp_ratio: 4            # Expansion ratio for MLP
   dropout: 0.1            # Dropout probability
   attn_dropout: 0.1       # Attention dropout probability
-  ego_motion_dim: 12      # Ego motion dimensions (position, orientation, acceleration, velocity, angular velocity)
+  ego_motion_dim: 15      # Updated: 3(translation) + 3(rotation) + 3(velocity) + 3(acceleration) + 3(angular_velocity)
 
 # Dataset parameters
 dataset:
-  seq_len: 5              # Number of frames in sequence
+  seq_len: 5              # Updated: Number of consecutive frames to process
   batch_size: 16          # Batch size for training
   num_workers: 8          # Number of worker processes for data loading
-  random_sequence: true   # Randomly select starting frame in sequence during training
+  random_sequence: true   # Updated: Enable random sequence sampling for training
   cache_images: false     # Whether to cache images in memory
+  temporal:
+    stride: 1             # Number of frames to skip between sequences
+    overlap: 0            # Number of overlapping frames between sequences
+    max_gap: 0.1          # Maximum allowed time gap between consecutive frames (in seconds)
+    min_frames: 5         # Minimum frames required in a sequence
+    max_frames: 50        # Maximum frames in a sequence
+    log_handling:
+      min_log_frames: 10  # Minimum frames required in a log
+      max_log_frames: 1000  # Maximum frames to use from a log
+    validation:
+      stride: 5           # Larger stride for validation to avoid overlap
+      max_gap: 0.05       # Stricter gap requirement for validation
 
 # Training parameters
 training:
@@ -31,6 +43,7 @@ training:
   reconstruction_weight: 1.0  # Weight for reconstruction loss
   consistency_weight: 1.0     # Weight for consistency loss
   future_weight: 0.5          # Weight for future prediction loss
+  temporal_weight: 0.3        # New: Weight for temporal consistency loss
   mixed_precision: false      # Whether to use mixed precision training
   gradient_accumulation: 1    # Number of gradient accumulation steps
 
@@ -40,4 +53,5 @@ logging:
   save_interval: 5        # Checkpoint saving interval in epochs
   eval_interval: 1        # Evaluation interval in epochs
   visualize_every: 5      # Visualize predictions every N epochs
-  num_viz_samples: 10     # Number of samples to visualize 
+  num_viz_samples: 10     # Number of samples to visualize
+  visualize_sequences: true  # New: Whether to visualize temporal sequences 

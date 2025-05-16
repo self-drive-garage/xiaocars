@@ -284,8 +284,9 @@ def parse_args():
                         help='Path to configuration file')
     
     # Data arguments
-    parser.add_argument('--data_dir', type=str, default='datasets/xiaocars',
+    parser.add_argument('--data_dir', type=str, default= '/localhome/local-samehm/workspace/xiaocars/dnn/pytorch/drivable-space-vit/datasets/xiaocars',
                         help='Path to dataset directory')
+    
     parser.add_argument('--output_dir', type=str, default='outputs',
                         help='Path to save checkpoints and logs')
     
@@ -394,7 +395,7 @@ def validate(model, loader, loss_fn, device, epoch, config):
     
     return val_loss
 
-@hydra.main(config_path=".", config_name="config")
+@hydra.main(config_path="config", config_name="config")
 def main(hydra_config: DictConfig):
     # Handle command-line arguments (for backward compatibility)
     args = parse_args()

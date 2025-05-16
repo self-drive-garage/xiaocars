@@ -18,7 +18,7 @@ class MotionAwareUpsampling(nn.Module):
         
         self.upsample = nn.Upsample(scale_factor=scale_factor, mode='bilinear', align_corners=False)
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
-        self.norm = nn.GroupNorm(32, out_channels)
+        self.norm = nn.GroupNorm(8, out_channels)
         self.act = nn.GELU()
         
     def forward(self, x):
