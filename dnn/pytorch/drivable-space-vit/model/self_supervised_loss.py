@@ -25,14 +25,21 @@ class SelfSupervisedLoss(nn.Module):
         total_loss = None
         
         # Reconstruction loss (if available)
-        if 'left_reconstructed' in outputs and 'right_reconstructed' in outputs:
+        if ('left_reconstructed' in outputs and 
+            'center_reconstructed' in outputs and 
+            'right_reconstructed' in outputs):
+            
             # Get the last frame from the sequence for reconstruction target
             left_target = batch['left_images'][:, -1]  # (B, C, H, W)
+            center_target = batch['center_images'][:, -1]  # (B, C, H, W)
             right_target = batch['right_images'][:, -1]  # (B, C, H, W)
             
             left_recon_loss = self.reconstruction_loss(outputs['left_reconstructed'], left_target)
+            center_recon_loss = self.reconstruction_loss(outputs['center_reconstructed'], center_target)
             right_recon_loss = self.reconstruction_loss(outputs['right_reconstructed'], right_target)
-            recon_loss = (left_recon_loss + right_recon_loss) / 2.0
+            
+            # Average the reconstruction loss across all three views
+            recon_loss = (left_recon_loss + center_recon_loss + right_recon_loss) / 3.0
             
             if total_loss is None:
                 total_loss = self.reconstruction_weight * recon_loss
@@ -43,17 +50,33 @@ class SelfSupervisedLoss(nn.Module):
             loss_dict['reconstruction_loss'] = recon_loss.item()
         
         # View consistency loss (if available)
-        if 'left_reconstructed' in outputs and 'right_reconstructed' in outputs:
-            # Calculate consistency between left and right reconstructions
-            # This encourages the model to learn stereo correspondence
+        if ('left_reconstructed' in outputs and 
+            'center_reconstructed' in outputs and 
+            'right_reconstructed' in outputs):
+            
+            # Calculate consistency between all pairs of reconstructions
             left_recon = outputs['left_reconstructed']
+            center_recon = outputs['center_reconstructed']
             right_recon = outputs['right_reconstructed']
             
-            # Calculate cosine similarity and convert to a loss (1 - similarity)
-            consistency = 1.0 - self.consistency_loss(
+            # Calculate pairwise cosine similarities and convert to loss (1 - similarity)
+            left_center_consistency = 1.0 - self.consistency_loss(
+                left_recon.reshape(left_recon.size(0), -1),
+                center_recon.reshape(center_recon.size(0), -1)
+            ).mean()
+            
+            center_right_consistency = 1.0 - self.consistency_loss(
+                center_recon.reshape(center_recon.size(0), -1),
+                right_recon.reshape(right_recon.size(0), -1)
+            ).mean()
+            
+            left_right_consistency = 1.0 - self.consistency_loss(
                 left_recon.reshape(left_recon.size(0), -1),
                 right_recon.reshape(right_recon.size(0), -1)
             ).mean()
+            
+            # Average the consistency losses
+            consistency = (left_center_consistency + center_right_consistency + left_right_consistency) / 3.0
             
             if total_loss is None:
                 total_loss = self.consistency_weight * consistency

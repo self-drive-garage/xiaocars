@@ -1,6 +1,6 @@
 import torch
 
-from .stereo_transformer import StereoTransformer
+from .multi_view_transformer import MultiViewTransformer
 from .self_supervised_loss import SelfSupervisedLoss
 from .cosine_scheduler_with_warmup import CosineSchedulerWithWarmup
 
@@ -47,7 +47,7 @@ def create_model(
     **kwargs
 ):
     """
-    Create and initialize the StereoTransformer model using either provided parameters or config
+    Create and initialize the MultiViewTransformer model using either provided parameters or config
     """
     # Get model configuration
     model_config = get_default_model_config()
@@ -68,7 +68,7 @@ def create_model(
     attn_dropout = attn_dropout if attn_dropout is not None else model_config['attn_dropout']
     ego_motion_dim = ego_motion_dim if ego_motion_dim is not None else model_config['ego_motion_dim']
     
-    model = StereoTransformer(
+    model = MultiViewTransformer(
         img_size=img_size,
         patch_size=patch_size,
         in_chans=in_chans,

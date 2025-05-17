@@ -44,7 +44,7 @@ def get_default_config():
     }
 
 class DrivingDataset(Dataset):
-    """Dataset for stereo driving data with ego motion"""
+    """Dataset for multi-view driving data with ego motion"""
     def __init__(
         self,
         data_dir: str,
@@ -157,8 +157,9 @@ class DrivingDataset(Dataset):
                 
                 valid_frames.append({
                     'timestamp': group.iloc[i]['timestamp'],
-                    'left_image_path': group.iloc[i]["stereo_front_left"],
-                    'right_image_path': group.iloc[i]["stereo_front_right"],
+                    'left_image_path': group.iloc[i]["ring_front_left"],  # Updated camera keys
+                    'center_image_path': group.iloc[i]["ring_front_center"],  # Updated camera keys
+                    'right_image_path': group.iloc[i]["ring_front_right"],  # Updated camera keys
                     'translation': np.array(group.iloc[i]['translation'].tolist(), dtype=np.float32),  # Convert to list first
                     'rotation': np.array(group.iloc[i]['rotation'].tolist(), dtype=np.float32),
                     'velocity': np.array(group.iloc[i]['velocity'].tolist(), dtype=np.float32),
@@ -223,6 +224,7 @@ class DrivingDataset(Dataset):
         
         # Load images for the sequence
         left_images = []
+        center_images = []  # Added center images
         right_images = []
         ego_motions = []
         timestamps = []
@@ -230,6 +232,7 @@ class DrivingDataset(Dataset):
         for frame in sequence:
             # Load images
             left_img = self.load_image(frame['left_image_path'])
+            center_img = self.load_image(frame['center_image_path'])  # Load center image
             right_img = self.load_image(frame['right_image_path'])
             
             # Extract ego motion features
@@ -250,12 +253,14 @@ class DrivingDataset(Dataset):
             ])
             
             left_images.append(left_img)
+            center_images.append(center_img)  # Add center image
             right_images.append(right_img)
             ego_motions.append(torch.from_numpy(ego_motion_values))
             timestamps.append(torch.tensor(frame['timestamp'], dtype=torch.float64))
         
         # Stack sequences
         left_images = torch.stack(left_images)  # [seq_len, C, H, W]
+        center_images = torch.stack(center_images)  # [seq_len, C, H, W]
         right_images = torch.stack(right_images)  # [seq_len, C, H, W]
         ego_motions = torch.stack(ego_motions)  # [seq_len, 15]
         timestamps = torch.stack(timestamps)  # [seq_len]
@@ -268,6 +273,7 @@ class DrivingDataset(Dataset):
         
         return {
             'left_images': left_images,
+            'center_images': center_images,  # Added center images 
             'right_images': right_images,
             'ego_motion': ego_motions,
             'timestamp': timestamps,
