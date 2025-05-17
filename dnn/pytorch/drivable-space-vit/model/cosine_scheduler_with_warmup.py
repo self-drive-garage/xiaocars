@@ -1,3 +1,5 @@
+import math
+
 class CosineSchedulerWithWarmup:
     """
     Learning rate scheduler with linear warmup followed by cosine decay.

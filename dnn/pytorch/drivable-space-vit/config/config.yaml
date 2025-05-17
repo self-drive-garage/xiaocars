@@ -64,8 +64,8 @@ training:
 # Logging and saving parameters
 logging:
   log_interval: 10        # Logging interval in steps
-  save_interval: 5        # Checkpoint saving interval in epochs
-  eval_interval: 1        # Evaluation interval in epochs
+  save_interval: 1        # Checkpoint saving interval in epochs
+  eval_interval: 5        # Evaluation interval in epochs
   visualize_every: 5      # Visualize predictions every N epochs
   num_viz_samples: 10     # Number of samples to visualize
   visualize_sequences: true  # New: Whether to visualize temporal sequences 

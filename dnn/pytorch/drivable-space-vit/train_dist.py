@@ -12,6 +12,7 @@ from tqdm import tqdm
 import hydra
 from omegaconf import DictConfig, OmegaConf
 from typing import Dict, Any
+import glob
 
 import torch
 import torch.nn as nn
@@ -58,6 +59,24 @@ def load_config(config_path):
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
     return config
+
+
+def find_latest_checkpoint(checkpoint_dir):
+    """Find the latest checkpoint in the checkpoint directory"""
+    checkpoint_files = glob.glob(str(checkpoint_dir / 'checkpoint_epoch_*.pth'))
+    if not checkpoint_files:
+        return None
+    
+    # Extract epoch numbers from filenames
+    epochs = [int(f.split('_')[-1].split('.')[0]) for f in checkpoint_files]
+    if not epochs:
+        return None
+    
+    # Find the checkpoint with the highest epoch number
+    latest_epoch = max(epochs)
+    latest_checkpoint = checkpoint_dir / f'checkpoint_epoch_{latest_epoch}.pth'
+    
+    return str(latest_checkpoint)
 
 
 def update_config_with_args(config, args):
@@ -532,6 +551,7 @@ def main():
     # Instead, parse them manually and update the config
     seed = 42
     resume = None
+    auto_resume = True  # New parameter for automatic resuming from latest checkpoint
     data_dir = "datasets/xiaocars"
     output_dir = "outputs"
     epochs = None
@@ -545,6 +565,7 @@ def main():
             seed = int(args[i+1])
         elif arg == "--resume" and i+1 < len(args):
             resume = args[i+1]
+            auto_resume = False  # If resume path is explicitly specified, don't auto-resume
         elif arg == "--data_dir" and i+1 < len(args):
             data_dir = args[i+1]
         elif arg == "--output_dir" and i+1 < len(args):
@@ -553,6 +574,8 @@ def main():
             epochs = int(args[i+1])
         elif arg == "--batch_size" and i+1 < len(args):
             batch_size = int(args[i+1])
+        elif arg == "--no_auto_resume" and i < len(args):
+            auto_resume = False
     
     # Set seed for reproducibility
     seed_everything(seed)
@@ -596,6 +619,35 @@ def main():
         file_handler = logging.FileHandler(log_file)
         file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         logger.addHandler(file_handler)
+    
+    # Checkpoint directory for auto-resume
+    checkpoint_dir = output_path / 'checkpoints'
+    
+    # Auto-resume from latest checkpoint if enabled and no specific checkpoint provided
+    if auto_resume and not resume and rank == 0:
+        latest_checkpoint = find_latest_checkpoint(checkpoint_dir)
+        if latest_checkpoint:
+            resume = latest_checkpoint
+            logger.info(f"Auto-resuming from latest checkpoint: {resume}")
+    
+    # Broadcast resume path from rank 0 to all processes
+    if world_size > 1:
+        if rank == 0:
+            resume_tensor = torch.tensor([len(resume) if resume else 0], dtype=torch.long, device=device)
+        else:
+            resume_tensor = torch.tensor([0], dtype=torch.long, device=device)
+        
+        dist.broadcast(resume_tensor, 0)
+        
+        if rank != 0 and resume_tensor.item() > 0:
+            # All other ranks receive the path from rank 0
+            resume_path_tensor = torch.zeros(resume_tensor.item(), dtype=torch.uint8, device=device)
+            dist.broadcast(resume_path_tensor, 0)
+            resume = ''.join([chr(x) for x in resume_path_tensor.tolist()])
+        elif rank == 0 and resume:
+            # Rank 0 sends the path to all other ranks
+            resume_path_tensor = torch.tensor([ord(c) for c in resume], dtype=torch.uint8, device=device)
+            dist.broadcast(resume_path_tensor, 0)
     
     # Log hardware info
     if rank == 0:  # Only log on main process
@@ -703,27 +755,41 @@ def main():
     if resume:
         if rank == 0:
             logger.info(f"Resuming from checkpoint: {resume}")
-        model, checkpoint = load_model_from_checkpoint(resume, device=device, config=config)
-        optimizer = create_optimizer(model, config['training']['lr'], config['training']['weight_decay'], config=config)
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        start_epoch = checkpoint['epoch'] + 1
-        
-        scheduler = create_scheduler(
-            optimizer, 
-            warmup_epochs=config['training']['warmup_epochs'], 
-            max_epochs=config['training']['epochs'],
-            min_lr=config['training']['min_lr'],
-            config=config
-        )
-        
-        if checkpoint.get('scheduler_state_dict'):
-            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-        
-        if 'best_val_loss' in checkpoint:
-            best_val_loss = checkpoint['best_val_loss']
+        try:
+            model, checkpoint = load_model_from_checkpoint(resume, device=device, config=config)
+            optimizer = create_optimizer(model, config['training']['lr'], config['training']['weight_decay'], config=config)
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            start_epoch = checkpoint['epoch'] + 1
             
-        if rank == 0:
-            logger.info(f"Resuming from epoch {start_epoch} with validation loss {best_val_loss:.6f}")
+            scheduler = create_scheduler(
+                optimizer, 
+                warmup_epochs=config['training']['warmup_epochs'], 
+                max_epochs=config['training']['epochs'],
+                min_lr=config['training']['min_lr'],
+                config=config
+            )
+            
+            if checkpoint.get('scheduler_state_dict'):
+                scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            
+            if 'best_val_loss' in checkpoint:
+                best_val_loss = checkpoint['best_val_loss']
+                
+            if rank == 0:
+                logger.info(f"Resuming from epoch {start_epoch} with validation loss {best_val_loss:.6f}")
+        except Exception as e:
+            logger.error(f"Failed to load checkpoint: {e}")
+            if rank == 0:
+                logger.warning("Starting training from scratch.")
+            model = create_model(**model_config, config=config)
+            optimizer = create_optimizer(model, config['training']['lr'], config['training']['weight_decay'], config=config)
+            scheduler = create_scheduler(
+                optimizer, 
+                warmup_epochs=config['training']['warmup_epochs'], 
+                max_epochs=config['training']['epochs'],
+                min_lr=config['training']['min_lr'],
+                config=config
+            )
     else:
         model = create_model(**model_config, config=config)
         optimizer = create_optimizer(model, config['training']['lr'], config['training']['weight_decay'], config=config)
@@ -762,68 +828,31 @@ def main():
     if rank == 0:
         logger.info(f"Starting training from epoch {start_epoch} to {config['training']['epochs']}")
     
-    for epoch in range(start_epoch, config['training']['epochs']):
-        train_sampler.set_epoch(epoch)
+    try:
+        for epoch in range(start_epoch, config['training']['epochs']):
+            train_sampler.set_epoch(epoch)
+                
+            if rank == 0:
+                logger.info(f"Starting epoch {epoch+1}/{config['training']['epochs']}")
             
-        if rank == 0:
-            logger.info(f"Starting epoch {epoch+1}/{config['training']['epochs']}")
-        
-        # Train for one epoch
-        train_loss = train_one_epoch(
-            model=model,
-            loader=train_loader,
-            optimizer=optimizer,
-            loss_fn=loss_fn,
-            device=device,
-            epoch=epoch,
-            config=config,
-            scaler=scaler,
-            rank=rank,
-        )
-        
-        # Update learning rate
-        scheduler.step(epoch)
-        
-        # Validate
-        if epoch % config['logging']['eval_interval'] == 0:
-            val_loss = validate(
+            # Train for one epoch
+            train_loss = train_one_epoch(
                 model=model,
-                loader=val_loader,
+                loader=train_loader,
+                optimizer=optimizer,
                 loss_fn=loss_fn,
                 device=device,
                 epoch=epoch,
                 config=config,
+                scaler=scaler,
                 rank=rank,
             )
             
-            # Log metrics on main process
-            if rank == 0:
-                writer.add_scalar('Loss/train', train_loss, epoch)
-                writer.add_scalar('Loss/val', val_loss, epoch)
-                writer.add_scalar('LR', optimizer.param_groups[0]['lr'], epoch)
-                
-                # Save best model
-                is_best = val_loss < best_val_loss
-                best_val_loss = min(val_loss, best_val_loss)
-                
-                if is_best:
-                    logger.info(f"New best validation loss: {best_val_loss:.4f}")
-                    
-                    # Save checkpoint
-                    save_model_checkpoint(
-                        model=model.module,  # Unwrap DDP
-                        optimizer=optimizer,
-                        scheduler=scheduler,
-                        epoch=epoch,
-                        loss=val_loss,
-                        save_path=checkpoint_dir / 'best_checkpoint.pth',
-                        model_config=model_config,
-                        additional_data={'best_val_loss': best_val_loss},
-                        config=config
-                    )
+            # Update learning rate
+            scheduler.step(epoch)
             
-            # Save regular checkpoint on main process
-            if rank == 0 and epoch % config['logging']['save_interval'] == 0:
+            # Save checkpoint every epoch (only on main process)
+            if rank == 0:
                 save_model_checkpoint(
                     model=model.module,  # Unwrap DDP
                     optimizer=optimizer,
@@ -835,42 +864,105 @@ def main():
                     additional_data={'best_val_loss': best_val_loss},
                     config=config
                 )
-                
-            # Visualize predictions on main process
-            if rank == 0 and (epoch + 1) % config['logging']['visualize_every'] == 0:
-                logger.info("Visualizing predictions...")
-                epoch_viz_dir = viz_dir / f'epoch_{epoch+1}'
-                epoch_viz_dir.mkdir(exist_ok=True)
-                
-                visualize_predictions(
-                    model=model.module,  # Unwrap DDP
-                    data_loader=val_loader,
+                logger.info(f"Saved checkpoint for epoch {epoch+1}")
+            
+            # Validate at regular intervals
+            if epoch % config['logging']['eval_interval'] == 0:
+                val_loss = validate(
+                    model=model,
+                    loader=val_loader,
+                    loss_fn=loss_fn,
                     device=device,
-                    output_dir=epoch_viz_dir,
-                    num_samples=config['logging']['num_viz_samples'],
+                    epoch=epoch,
+                    config=config,
                     rank=rank,
                 )
-    
-    # Save final model on main process
-    if rank == 0:
-        save_model_checkpoint(
-            model=model.module,  # Unwrap DDP
-            optimizer=optimizer,
-            scheduler=scheduler,
-            epoch=config['training']['epochs'] - 1,
-            loss=train_loss,
-            save_path=checkpoint_dir / 'final_checkpoint.pth',
-            model_config=model_config,
-            additional_data={'best_val_loss': best_val_loss},
-            config=config
-        )
+                
+                # Log metrics on main process
+                if rank == 0:
+                    writer.add_scalar('Loss/train', train_loss, epoch)
+                    writer.add_scalar('Loss/val', val_loss, epoch)
+                    writer.add_scalar('LR', optimizer.param_groups[0]['lr'], epoch)
+                    
+                    # Save best model
+                    is_best = val_loss < best_val_loss
+                    best_val_loss = min(val_loss, best_val_loss)
+                    
+                    if is_best:
+                        logger.info(f"New best validation loss: {best_val_loss:.4f}")
+                        
+                        # Save checkpoint
+                        save_model_checkpoint(
+                            model=model.module,  # Unwrap DDP
+                            optimizer=optimizer,
+                            scheduler=scheduler,
+                            epoch=epoch,
+                            loss=val_loss,
+                            save_path=checkpoint_dir / 'best_checkpoint.pth',
+                            model_config=model_config,
+                            additional_data={'best_val_loss': best_val_loss},
+                            config=config
+                        )
+                    
+                # Visualize predictions on main process
+                if rank == 0 and (epoch + 1) % config['logging']['visualize_every'] == 0:
+                    logger.info("Visualizing predictions...")
+                    epoch_viz_dir = viz_dir / f'epoch_{epoch+1}'
+                    epoch_viz_dir.mkdir(exist_ok=True)
+                    
+                    visualize_predictions(
+                        model=model.module,  # Unwrap DDP
+                        data_loader=val_loader,
+                        device=device,
+                        output_dir=epoch_viz_dir,
+                        num_samples=config['logging']['num_viz_samples'],
+                        rank=rank,
+                    )
         
-        logger.info("Training complete!")
-        if writer is not None:
-            writer.close()
+        # Save final model on main process
+        if rank == 0:
+            save_model_checkpoint(
+                model=model.module,  # Unwrap DDP
+                optimizer=optimizer,
+                scheduler=scheduler,
+                epoch=config['training']['epochs'] - 1,
+                loss=train_loss,
+                save_path=checkpoint_dir / 'final_checkpoint.pth',
+                model_config=model_config,
+                additional_data={'best_val_loss': best_val_loss},
+                config=config
+            )
+            
+            logger.info("Training complete!")
+            if writer is not None:
+                writer.close()
     
-    # Cleanup distributed training
-    cleanup_distributed()
+    except Exception as e:
+        if rank == 0:
+            logger.error(f"Training failed with error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            
+            # Save emergency checkpoint on error
+            try:
+                save_model_checkpoint(
+                    model=model.module,  # Unwrap DDP
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    epoch=epoch,
+                    loss=float('inf') if 'train_loss' not in locals() else train_loss,
+                    save_path=checkpoint_dir / f'emergency_checkpoint_epoch_{epoch}.pth',
+                    model_config=model_config,
+                    additional_data={'best_val_loss': best_val_loss, 'error': str(e)},
+                    config=config
+                )
+                logger.info(f"Saved emergency checkpoint for epoch {epoch+1}")
+            except Exception as save_error:
+                logger.error(f"Failed to save emergency checkpoint: {save_error}")
+    
+    finally:
+        # Cleanup distributed training
+        cleanup_distributed()
 
 if __name__ == "__main__":
     main()
