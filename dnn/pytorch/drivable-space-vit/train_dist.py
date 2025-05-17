@@ -50,7 +50,7 @@ os.environ["NCCL_TIMEOUT"] = "1800"  # 30 minute timeout (in seconds)
 
 # Manage memory more carefully
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # Match device IDs to PCI bus order
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"  # Explicitly select just two GPUs for testing
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"  # Explicitly select just two GPUs for testing
 
 
 def load_config(config_path):
