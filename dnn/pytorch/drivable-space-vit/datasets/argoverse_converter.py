@@ -28,7 +28,7 @@ import glob
 import uuid
 
 try:
-    from av2.datasets.sensor.constants import StereoCameras
+    from av2.datasets.sensor.constants import RingCameras
     from av2.datasets.sensor.sensor_dataloader import SensorDataloader
 except ImportError as e:
     print(f"Argoverse 2 API not found. Please install it with: pip install av2")
@@ -175,7 +175,7 @@ def compute_ego_motion_features(log_entries):
 
 
 def process_sweep(datum, argoverse_root, split_name, process_id):
-    """Process a single sweep and return the stereo pair data"""
+    """Process a single sweep and return the ring camera data"""
     try:
         timestamp_city_SE3_ego_dict = datum.timestamp_city_SE3_ego_dict
         synchronized_imagery = datum.synchronized_imagery
@@ -184,20 +184,22 @@ def process_sweep(datum, argoverse_root, split_name, process_id):
         if synchronized_imagery is None:
             return None
         
-        left_stereo_camera = synchronized_imagery.get(StereoCameras.STEREO_FRONT_LEFT)
-        right_stereo_camera = synchronized_imagery.get(StereoCameras.STEREO_FRONT_RIGHT)
+        ring_front_left = synchronized_imagery.get(RingCameras.RING_FRONT_LEFT)
+        ring_front_center = synchronized_imagery.get(RingCameras.RING_FRONT_CENTER)
+        ring_front_right = synchronized_imagery.get(RingCameras.RING_FRONT_RIGHT)
         
-        if left_stereo_camera is None or right_stereo_camera is None:
+        if ring_front_left is None or ring_front_center is None or ring_front_right is None:
             return None
 
         base_path = f"{argoverse_root}/{split_name}/{log_id}/sensors/cameras/"
-        city_SE3_ego_cam_t = timestamp_city_SE3_ego_dict[left_stereo_camera.timestamp_ns]
+        city_SE3_ego_cam_t = timestamp_city_SE3_ego_dict[ring_front_center.timestamp_ns]
 
         # Create entry dictionary
         entry = {
-            f'{StereoCameras.STEREO_FRONT_LEFT}': os.path.join(base_path, StereoCameras.STEREO_FRONT_LEFT, f"{left_stereo_camera.timestamp_ns}.jpg"),
-            f'{StereoCameras.STEREO_FRONT_RIGHT}': os.path.join(base_path, StereoCameras.STEREO_FRONT_RIGHT, f"{right_stereo_camera.timestamp_ns}.jpg"),
-            'timestamp': left_stereo_camera.timestamp_ns,
+            f'{RingCameras.RING_FRONT_LEFT}': os.path.join(base_path, RingCameras.RING_FRONT_LEFT, f"{ring_front_left.timestamp_ns}.jpg"),
+            f'{RingCameras.RING_FRONT_CENTER}': os.path.join(base_path, RingCameras.RING_FRONT_CENTER, f"{ring_front_center.timestamp_ns}.jpg"),
+            f'{RingCameras.RING_FRONT_RIGHT}': os.path.join(base_path, RingCameras.RING_FRONT_RIGHT, f"{ring_front_right.timestamp_ns}.jpg"),
+            'timestamp': ring_front_center.timestamp_ns,
             'translation': city_SE3_ego_cam_t.translation.tolist(),
             'rotation': city_SE3_ego_cam_t.rotation.tolist(),
             'log_id': log_id,
@@ -218,7 +220,7 @@ def worker_process(worker_id, indices, argoverse_root, output_root, split_name):
     """Worker process that handles a subset of dataset indices"""
     try:
         # Create dataset for this worker
-        cam_names = (StereoCameras.STEREO_FRONT_LEFT, StereoCameras.STEREO_FRONT_RIGHT)
+        cam_names = (RingCameras.RING_FRONT_LEFT, RingCameras.RING_FRONT_CENTER, RingCameras.RING_FRONT_RIGHT)
         dataset = FixedSensorDataloader(
             Path(argoverse_root),
             with_annotations=True,
@@ -370,7 +372,7 @@ def convert_argoverse2(argoverse_root, output_root, splits=None, img_size=None, 
     ensure_directory(os.path.join(output_root, "temp_files"))
     
     # Define which cameras to use
-    cam_names = (StereoCameras.STEREO_FRONT_LEFT, StereoCameras.STEREO_FRONT_RIGHT)
+    cam_names = (RingCameras.RING_FRONT_LEFT, RingCameras.RING_FRONT_CENTER, RingCameras.RING_FRONT_RIGHT)
     split_name = "train"  # Using val split by default
     
     try:
