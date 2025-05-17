@@ -193,6 +193,26 @@ class DrivingDataset(Dataset):
         logger.info(f"Loaded {len(self.log_sequences)} logs")
         logger.info(f"Created {len(self.sequences)} valid sequences")
         logger.info(f"Average sequence length: {np.mean([len(s) for s in self.sequences]):.2f} frames")
+        
+        # In __init__ method, after loading all log sequences
+        ego_motion_data = []
+        for frames in self.log_sequences.values():
+            for frame in frames:
+                ego_motion_values = np.concatenate([
+                    frame['translation'],
+                    np.arctan2([frame['rotation'][2, 1], -frame['rotation'][2, 0], frame['rotation'][1, 0]], 
+                              [frame['rotation'][2, 2], np.sqrt(frame['rotation'][2, 1]**2 + frame['rotation'][2, 2]**2), frame['rotation'][0, 0]]),
+                    frame['velocity'],
+                    frame['acceleration'],
+                    frame['angular_velocity']
+                ])
+                ego_motion_data.append(ego_motion_values)
+        
+        # Calculate mean and std for normalization
+        self.ego_motion_mean = torch.tensor(np.mean(ego_motion_data, axis=0), dtype=torch.float32)
+        self.ego_motion_std = torch.tensor(np.std(ego_motion_data, axis=0), dtype=torch.float32)
+        # Avoid division by zero
+        self.ego_motion_std = torch.where(self.ego_motion_std == 0, torch.ones_like(self.ego_motion_std), self.ego_motion_std)
     
     def __len__(self):
         return len(self.sequences)
@@ -243,7 +263,8 @@ class DrivingDataset(Dataset):
         # Add future_features for future prediction loss
         # For simplicity, use the last timestep's ego_motion as future_features
         # In a real implementation, this would be the ego_motion of future frames
-        future_features = ego_motions[-1].clone()
+        # Example normalization for future_features
+        future_features = (ego_motions[-1] - self.ego_motion_mean.to(ego_motions.device)) / self.ego_motion_std.to(ego_motions.device)
         
         return {
             'left_images': left_images,

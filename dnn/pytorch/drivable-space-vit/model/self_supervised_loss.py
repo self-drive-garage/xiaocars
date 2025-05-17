@@ -3,7 +3,7 @@ import torch.nn as nn
 
 class SelfSupervisedLoss(nn.Module):
     """Combined loss for self-supervised training"""
-    def __init__(self, reconstruction_weight=1.0, consistency_weight=1.0, future_weight=0.5):
+    def __init__(self, reconstruction_weight=1.0, consistency_weight=1.0, future_weight=0.005):
         super().__init__()
         self.reconstruction_weight = reconstruction_weight
         self.consistency_weight = consistency_weight

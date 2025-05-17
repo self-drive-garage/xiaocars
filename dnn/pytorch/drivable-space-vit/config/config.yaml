@@ -32,20 +32,34 @@ dataset:
       stride: 5           # Larger stride for validation
       max_gap: 0.12       # Stricter gap requirement for validation (closer to 10Hz)
 
-# Training parameters
 training:
-  epochs: 100             # Number of epochs to train
-  lr: 1e-4                # Learning rate
-  weight_decay: 1e-4      # Weight decay
-  warmup_epochs: 10       # Number of warmup epochs
-  min_lr: 1e-6            # Minimum learning rate
-  reconstruction_weight: 1.0  # Weight for reconstruction loss
-  consistency_weight: 1.0     # Weight for consistency loss
-  future_weight: 0.5          # Weight for future prediction loss
-  temporal_weight: 0.3        # New: Weight for temporal consistency loss
-  mixed_precision: true       # Enabled mixed precision to save memory
-  gradient_accumulation: 4    # Increased to 4 to simulate batch_size=8 with lower memory
-  gradient_clipping: 1.0      # Added gradient clipping to help with large gradients
+  # Learning rate and schedule parameters
+  lr: 3e-4                     # Increased from 1e-4 for faster convergence
+  warmup_epochs: 5             # Reduced from 10 for more efficient training
+  min_lr: 1e-5                 # Increased from 1e-6 to prevent stalling
+  lr_schedule: "cosine"        # Confirm using cosine schedule
+  
+  # Optimizer parameters
+  optimizer: "AdamW"           # Explicitly use AdamW instead of Adam
+  weight_decay: 1e-4           # Keep your current weight decay
+  beta1: 0.9                   # Adam/AdamW beta1 parameter (add this)
+  beta2: 0.999                 # Adam/AdamW beta2 parameter (add this)
+  eps: 1e-8                    # Adam/AdamW epsilon parameter (add this)
+  
+  # Loss weights - adjusted based on your training logs
+  reconstruction_weight: 1.0   # Keep reconstruction weight
+  consistency_weight: 0.5      # Reduce from 1.0 since this component is already well-optimized
+  future_weight: 1.0           # Increase from 0.5 to focus more on future prediction
+  temporal_weight: 0.5         # Increase from 0.3 to enhance temporal consistency
+  
+  # Training optimizations
+  mixed_precision: true        # Keep mixed precision for memory efficiency
+  gradient_accumulation: 4     # Keep existing accumulation steps
+  gradient_clipping: 1.0       # Keep gradient clipping to prevent explosions
+  
+  # Additional parameters to consider
+  epochs: 100                  # Keep your planned 100 epochs
+  amp_device: "cuda"           # Specify device for automatic mixed precision (to fix warnings)
 
 # Logging and saving parameters
 logging:

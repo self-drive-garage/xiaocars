@@ -260,7 +260,9 @@ def train_one_epoch(model, loader, optimizer, loss_fn, device, epoch, config, sc
         
         # Forward pass with mixed precision if enabled
         if scaler is not None:
-            with torch.cuda.amp.autocast():
+            amp_device = config['training'].get('amp_device', 'cuda')
+            scaler = torch.amp.GradScaler(amp_device) if config['training']['mixed_precision'] else None
+            with torch.amp.autocast(amp_device):
                 # Set task to 'all' to generate all outputs needed for loss calculation
                 outputs = model(batch, task='all')
                 loss, loss_dict = loss_fn(outputs, batch)

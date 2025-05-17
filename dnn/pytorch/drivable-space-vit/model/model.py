@@ -111,9 +111,9 @@ def create_loss_function(
         future_weight=future_weight
     )
 
-def create_optimizer(model, lr=None, weight_decay=None, config=None):
+def create_optimizer(model, lr=1e-4, weight_decay=1e-4, config=None):
     """
-    Create optimizer for the model
+    Create AdamW optimizer with appropriate parameters
     """
     # Get training configuration
     training_config = get_default_training_config()
@@ -122,14 +122,17 @@ def create_optimizer(model, lr=None, weight_decay=None, config=None):
         for key, value in config['training'].items():
             training_config[key] = value
     
-    # Use provided parameters if given, otherwise use config
-    lr = lr if lr is not None else training_config['lr']
-    weight_decay = weight_decay if weight_decay is not None else training_config['weight_decay']
+    # Get optimizer parameters
+    beta1 = training_config.get('beta1', 0.9)
+    beta2 = training_config.get('beta2', 0.999)
+    eps = training_config.get('eps', 1e-8)
     
     return torch.optim.AdamW(
         model.parameters(),
         lr=lr,
-        weight_decay=weight_decay
+        weight_decay=weight_decay,
+        betas=(beta1, beta2),
+        eps=eps
     )
 
 def create_scheduler(optimizer, warmup_epochs=None, max_epochs=None, min_lr=None, config=None):
