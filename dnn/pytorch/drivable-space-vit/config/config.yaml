@@ -16,7 +16,7 @@ model:
 # Dataset parameters
 dataset:
   seq_len: 3              # Number of frames used by the model for one sample
-  batch_size: 16          # Batch size for training
+  batch_size: 1          # Batch size for training
   num_workers: 8          # Number of worker processes for data loading
   random_sequence: true   # Enable random sequence sampling for training
   cache_images: false     # Whether to cache images in memory

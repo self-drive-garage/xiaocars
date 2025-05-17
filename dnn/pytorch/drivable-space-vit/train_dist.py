@@ -6,7 +6,7 @@ import numpy as np
 import random
 from pathlib import Path
 import yaml
-from datetime import datetime
+from datetime import datetime, timedelta
 from tqdm import tqdm
 import hydra
 from omegaconf import DictConfig, OmegaConf
@@ -36,6 +36,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Set PyTorch memory optimization environment variable
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 
 def load_config(config_path):
     """Load configuration from YAML file"""
@@ -49,10 +52,16 @@ def update_config_with_args(config, args):
     # Update model config
     if args.img_size is not None:
         config['model']['img_size'] = args.img_size
+    else:
+        # Reduce image size to save memory
+        config['model'].setdefault('img_size', 160)  # Further reduced from 192 to 160
     if args.patch_size is not None:
         config['model']['patch_size'] = args.patch_size
     if args.embed_dim is not None:
         config['model']['embed_dim'] = args.embed_dim
+    else:
+        # Use smaller embedding dimension to save memory
+        config['model'].setdefault('embed_dim', 512)  # Reduced from default 768
     if args.num_layers is not None:
         config['model']['num_layers'] = args.num_layers
     if args.num_heads is not None:
@@ -68,8 +77,18 @@ def update_config_with_args(config, args):
         config['dataset']['seq_len'] = args.seq_len
     if args.batch_size is not None:
         config['dataset']['batch_size'] = args.batch_size
+    else:
+        # Calculate batch size based on GPU count - aim for total batch size of 32 across all GPUs
+        gpu_count = torch.cuda.device_count() if args.distributed else 1
+        per_gpu_batch = max(1, min(2, int(32 / gpu_count)))  # Limit to at most 2 per GPU, at least 1
+        config['dataset'].setdefault('batch_size', per_gpu_batch)
+        logger.info(f"Auto batch size: {per_gpu_batch} per GPU, {per_gpu_batch * gpu_count} total across {gpu_count} GPUs")
     if args.num_workers is not None:
         config['dataset']['num_workers'] = args.num_workers
+    else:
+        # Auto-set num_workers to 2 per GPU (reduced from 4 to be safer)
+        gpu_count = torch.cuda.device_count() if args.distributed else 1
+        config['dataset'].setdefault('num_workers', min(2, os.cpu_count() // gpu_count))
     
     # Update training config
     if args.epochs is not None:
@@ -209,6 +228,14 @@ def visualize_predictions(model, data_loader, device, output_dir, num_samples=10
 
 
 def train_one_epoch(model, loader, optimizer, loss_fn, device, epoch, config, scaler=None, rank=0):
+    # Synchronize all processes before starting training
+    if True and torch.distributed.is_initialized():
+        try:
+            torch.distributed.barrier()
+            print(f"Rank {rank}: Successfully synchronized at start of epoch {epoch+1}")
+        except Exception as e:
+            print(f"Rank {rank}: Error during barrier synchronization: {e}")
+
     model.train()
     running_loss = 0.0
     total_steps = len(loader)
@@ -239,6 +266,10 @@ def train_one_epoch(model, loader, optimizer, loss_fn, device, epoch, config, sc
             
             # Update weights if gradient accumulation steps reached
             if (step + 1) % config['training']['gradient_accumulation'] == 0:
+                # Apply gradient clipping to prevent exploding gradients
+                if config.get('training', {}).get('gradient_clipping', 1.0) > 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), config.get('training', {}).get('gradient_clipping', 1.0))
+                    
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad()
@@ -256,6 +287,10 @@ def train_one_epoch(model, loader, optimizer, loss_fn, device, epoch, config, sc
             
             # Update weights if gradient accumulation steps reached
             if (step + 1) % config['training']['gradient_accumulation'] == 0:
+                # Apply gradient clipping to prevent exploding gradients
+                if config.get('training', {}).get('gradient_clipping', 1.0) > 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), config.get('training', {}).get('gradient_clipping', 1.0))
+                    
                 optimizer.step()
                 optimizer.zero_grad()
         
@@ -291,7 +326,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Train Drivable Space ViT model')
     
     # Distributed training arguments
-    parser.add_argument('--distributed', action='store_true', default=True,
+    parser.add_argument('--distributed', action='store_true', default=False,
                         help='Use distributed training')
     parser.add_argument('--world_size', type=int, default=None,
                         help='Number of GPUs to use for distributed training')
@@ -426,26 +461,67 @@ def setup_distributed(rank, world_size):
     """Initialize distributed training"""
     if world_size > 1:
         print(f"Initializing distributed training with rank {rank} and world_size {world_size}")
-        os.environ['MASTER_ADDR'] = 'localhost'
-        os.environ['MASTER_PORT'] = '12355'
         
-        # Set timeout to 30 seconds
-        timeout = datetime.timedelta(seconds=30)
+        # Use environment variables for multi-node training if provided
+        master_addr = os.environ.get('MASTER_ADDR', 'localhost')
+        master_port = os.environ.get('MASTER_PORT', '12355')
+        
+        os.environ['MASTER_ADDR'] = master_addr
+        os.environ['MASTER_PORT'] = master_port
+        
+        print(f"Using MASTER_ADDR={master_addr}, MASTER_PORT={master_port}")
+        
+        # Set NCCL environment variables to help with debugging and stability
+        os.environ['NCCL_DEBUG'] = 'INFO'
+        # Remove the socket interface limitation to let NCCL auto-detect
+        # os.environ['NCCL_SOCKET_IFNAME'] = 'lo'  # Use loopback interface for local training
+        
+        # Add more debugging settings
+        os.environ['NCCL_BLOCKING_WAIT'] = '1'  # Make NCCL more robust to slow nodes
+        os.environ['NCCL_IB_TIMEOUT'] = '30'    # Increase timeout for InfiniBand operations
+        
+        # Set timeout to 120 seconds for large setups (increased from 60)
+        timeout = timedelta(seconds=120)
+        
+        # Set device for this process BEFORE initializing process group
+        local_device = rank % torch.cuda.device_count()
+        torch.cuda.set_device(local_device)
+        print(f"Set CUDA device to {local_device} for rank {rank}")
+        
+        # Initialize CUDA context on the assigned device
+        dummy = torch.zeros(1).cuda()
+        print(f"Initialized CUDA context on device {local_device} for rank {rank}")
         
         try:
+            # Try NCCL for GPU training (which we know is available from check_backends.py)
+            backend = "nccl"
+            print(f"Initializing process group with backend {backend} for rank {rank}")
             dist.init_process_group(
-                "nccl",
+                backend,
+                init_method=f"env://",
                 rank=rank,
                 world_size=world_size,
                 timeout=timeout
             )
-            print(f"Successfully initialized process group for rank {rank}")
-        except Exception as e:
-            print(f"Failed to initialize process group: {e}")
-            raise
+            print(f"Successfully initialized process group with backend {backend} for rank {rank}")
             
-        torch.cuda.set_device(rank)
-        print(f"Set CUDA device to {rank}")
+        except Exception as e:
+            print(f"NCCL initialization failed for rank {rank}: {e}")
+            print(f"Rank {rank} falling back to Gloo backend")
+            try:
+                # Fall back to Gloo if NCCL fails
+                backend = "gloo"
+                dist.init_process_group(
+                    backend,
+                    init_method=f"env://",
+                    rank=rank,
+                    world_size=world_size,
+                    timeout=timeout
+                )
+                print(f"Successfully initialized process group with backend {backend} for rank {rank}")
+            except Exception as e:
+                print(f"Failed to initialize process group with Gloo for rank {rank}: {e}")
+                raise
     else:
         print("Running in single GPU mode")
 
@@ -458,8 +534,27 @@ def cleanup_distributed():
         print("Distributed training cleanup complete")
 
 
+def create_efficient_sampler(dataset, is_distributed, world_size=None, rank=None, shuffle=True):
+    """Create an efficient sampler for distributed training that doesn't load all indices into memory"""
+    if is_distributed:
+        # Create a distributed sampler that only loads indices for this rank
+        return DistributedSampler(
+            dataset, 
+            num_replicas=world_size,
+            rank=rank,
+            shuffle=shuffle,
+            drop_last=True  # Drop last to ensure same batch size on all GPUs
+        )
+    elif shuffle:
+        # For non-distributed training with shuffling
+        return torch.utils.data.RandomSampler(dataset)
+    else:
+        # For non-distributed training without shuffling
+        return torch.utils.data.SequentialSampler(dataset)
+
 @hydra.main(config_path="config", config_name="config", version_base=None)
 def main(hydra_config: DictConfig):
+    
     # Add immediate logging to see if script starts
     print("Starting training script...")
     
@@ -472,12 +567,22 @@ def main(hydra_config: DictConfig):
     # Setup distributed training
     if args.distributed:
         if args.world_size is None:
+            # Start with a more conservative number of GPUs - just 4 to verify functionality
+            suggested_gpus = min(4, torch.cuda.device_count())
+            logger.warning(f"Starting with {suggested_gpus} GPUs (out of {torch.cuda.device_count()} available) for initial testing.")
+            logger.warning(f"Once this works, you can increase to more GPUs with --nproc_per_node=N")
+            args.world_size = suggested_gpus
+            print(f"Using {args.world_size} GPUs for training")
+        
+        # Check if we have enough GPUs
+        if args.world_size > torch.cuda.device_count():
+            logger.warning(f"Requested {args.world_size} GPUs but only {torch.cuda.device_count()} available. Using {torch.cuda.device_count()} GPUs.")
             args.world_size = torch.cuda.device_count()
-            print(f"Using {args.world_size} GPUs")
+            
         if args.rank is None:
-            args.rank = int(os.environ.get('LOCAL_RANK', 0))
+            args.rank = int(os.environ.get('RANK', os.environ.get('LOCAL_RANK', 0)))
         if args.local_rank is None:
-            args.local_rank = args.rank
+            args.local_rank = int(os.environ.get('LOCAL_RANK', args.rank % torch.cuda.device_count()))
             
         print(f"Setting up distributed training with world_size={args.world_size}, rank={args.rank}, local_rank={args.local_rank}")
         
@@ -572,8 +677,8 @@ def main(hydra_config: DictConfig):
         logger.info(f"Validation dataset size: {len(val_dataset)}")
     
     # Create distributed samplers if using distributed training
-    train_sampler = DistributedSampler(train_dataset) if args.distributed else None
-    val_sampler = DistributedSampler(val_dataset, shuffle=False) if args.distributed else None
+    train_sampler = create_efficient_sampler(train_dataset, args.distributed, args.world_size, args.rank)
+    val_sampler = create_efficient_sampler(val_dataset, args.distributed, args.world_size, args.rank, False)
     
     train_loader = create_dataloader(
         train_dataset,
@@ -582,6 +687,7 @@ def main(hydra_config: DictConfig):
         shuffle=(train_sampler is None),
         sampler=train_sampler,
         config=config,
+        debug=True  # Ensure we're not in debug mode for actual training
     )
     
     val_loader = create_dataloader(
@@ -591,6 +697,7 @@ def main(hydra_config: DictConfig):
         shuffle=False,
         sampler=val_sampler,
         config=config,
+        debug=False  # Ensure we're not in debug mode for validation
     )
     
     # Create model

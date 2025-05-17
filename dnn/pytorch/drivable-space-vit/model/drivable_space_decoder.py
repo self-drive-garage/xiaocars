@@ -69,7 +69,7 @@ class DrivableSpaceDecoder(nn.Module):
         )
         
         # Convolutional decoder for progressive upsampling
-        hidden_dim = 128
+        hidden_dim = 64  # Reduced from 128 to save memory
         self.initial_conv = nn.Conv2d(1, hidden_dim, kernel_size=3, padding=1)
         
         # Motion context projection layer
@@ -117,17 +117,36 @@ class DrivableSpaceDecoder(nn.Module):
         
         # Progressive upsampling with residual connections
         features = []
-        for decoder_stage in self.decoder_stages:
+        for i, decoder_stage in enumerate(self.decoder_stages):
             features.append(x)
+            
+            # Apply upsampling stage with memory optimization
+            if hasattr(torch.cuda, 'empty_cache'):
+                torch.cuda.empty_cache()  # Free up memory before upsampling
+            
             x = decoder_stage(x)
             
             # Add residual if resolution matches
             if x.size(2) == features[-1].size(2) * 2:
-                upsampled_prev = F.interpolate(features[-1], scale_factor=2, mode='bilinear', align_corners=False)
+                # Use more memory-efficient approach for interpolation
+                with torch.cuda.amp.autocast(enabled=True):  # Use reduced precision
+                    upsampled_prev = F.interpolate(
+                        features[-1], 
+                        size=(x.size(2), x.size(3)),  # Use size instead of scale_factor for stability
+                        mode='bilinear', 
+                        align_corners=False
+                    )
                 x = x + upsampled_prev
+            
+            # Clear references to free memory
+            if i > 0:
+                features[i-1] = None
         
         # Final prediction
         x = self.final_conv(x)
+        
+        # Free memory from features list
+        features.clear()
         
         # Resize to match input image size if needed
         if x.size(2) != self.img_size or x.size(3) != self.img_size:

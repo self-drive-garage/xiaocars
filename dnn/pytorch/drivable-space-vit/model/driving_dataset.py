@@ -297,8 +297,8 @@ class DrivingDataset(Dataset):
         
         return total_size / (1024 * 1024)  # Convert to MB
 
-def create_dataloader(dataset, batch_size=None, num_workers=None, shuffle=True, sampler=None, config=None, debug=False):
-    """Create data loader for the dataset"""
+def create_dataloader(dataset, batch_size=None, num_workers=None, shuffle=True, sampler=None, config=None, debug=True):
+    """Create data loader with safer defaults for distributed training"""
     # Get default configuration
     default_config = get_default_config()
     
@@ -307,20 +307,35 @@ def create_dataloader(dataset, batch_size=None, num_workers=None, shuffle=True, 
     if config is not None and 'dataset' in config:
         dataset_config = config['dataset']
     
-    # In debug mode, use smaller batch size and fewer workers
-    if debug:
-        batch_size = 2
-        num_workers = 2
+    # Set safer defaults for distributed training
+    is_distributed = sampler is not None  # If sampler provided, likely distributed
+    
+    # In debug mode or distributed mode, use safer settings
+    if debug or is_distributed:
+        # Start with 0 workers for debugging distributed training
+        safe_workers = 0
+        # Use smaller batch size for debugging
+        safe_batch_size = 1 if debug else 2
     else:
-        batch_size = batch_size if batch_size is not None else dataset_config.get('batch_size', default_config['dataset']['batch_size'])
-        num_workers = num_workers if num_workers is not None else dataset_config.get('num_workers', default_config['dataset']['num_workers'])
+        safe_workers = 2  # Default to 2 workers for non-distributed
+        safe_batch_size = dataset_config.get('batch_size', default_config['dataset']['batch_size'])
+    
+    # Use provided values or safe defaults
+    batch_size = batch_size if batch_size is not None else safe_batch_size
+    num_workers = num_workers if num_workers is not None else safe_workers
+    
+    # Print dataloader configuration for debugging
+    rank = getattr(sampler, 'rank', None) if sampler else 'N/A'
+    print(f"Rank {rank}: Creating DataLoader with batch_size={batch_size}, workers={num_workers}, shuffle={shuffle and sampler is None}")
     
     return DataLoader(
         dataset,
         batch_size=batch_size,
-        num_workers=num_workers,
-        shuffle=shuffle,
+        num_workers=num_workers,  # Use 0 workers for debugging
+        shuffle=shuffle if sampler is None else False,  # Don't shuffle when using sampler
         sampler=sampler,
-        pin_memory=True,
-        drop_last=True,  # Drop last incomplete batch
+        pin_memory=False,  # Disable pin_memory for debugging
+        drop_last=True,  # Keep drop_last=True for consistent batch sizes
+        persistent_workers=False,  # Disable persistent workers
+        timeout=60  # Add timeout to detect worker hangs
     )
