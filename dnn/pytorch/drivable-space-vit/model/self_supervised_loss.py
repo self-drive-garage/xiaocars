@@ -12,6 +12,9 @@ class SelfSupervisedLoss(nn.Module):
         self.reconstruction_loss = nn.MSELoss()
         self.consistency_loss = nn.CosineSimilarity(dim=1)
         self.future_prediction_loss = nn.MSELoss()
+        
+        # Add a projection layer to handle dimension mismatch in future prediction
+        self.future_projection = None
     
     def forward(self, outputs, batch):
         # Track if we've added any loss components
@@ -62,10 +65,25 @@ class SelfSupervisedLoss(nn.Module):
         
         # Future prediction loss (if available)
         if 'future_prediction' in outputs and batch.get('future_features') is not None:
-            future_loss = self.future_prediction_loss(
-                outputs['future_prediction'],
-                batch['future_features']
-            )
+            future_pred = outputs['future_prediction']
+            future_target = batch['future_features']
+            
+            # Handle dimension mismatch - initialize projection layer if needed
+            if self.future_projection is None and future_pred.size(1) != future_target.size(1):
+                input_dim = future_pred.size(1)
+                output_dim = future_target.size(1)
+                self.future_projection = nn.Linear(input_dim, output_dim).to(future_pred.device)
+                # Initialize projection with small weights for stability
+                nn.init.xavier_uniform_(self.future_projection.weight, gain=0.01)
+                nn.init.zeros_(self.future_projection.bias)
+                print(f"Created projection layer from {input_dim} to {output_dim} features")
+            
+            # Apply projection if needed
+            if self.future_projection is not None:
+                future_pred = self.future_projection(future_pred)
+            
+            # Now compute the loss with matching dimensions
+            future_loss = self.future_prediction_loss(future_pred, future_target)
             
             if total_loss is None:
                 total_loss = self.future_weight * future_loss

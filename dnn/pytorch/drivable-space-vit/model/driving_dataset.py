@@ -240,11 +240,17 @@ class DrivingDataset(Dataset):
         ego_motions = torch.stack(ego_motions)  # [seq_len, 15]
         timestamps = torch.stack(timestamps)  # [seq_len]
         
+        # Add future_features for future prediction loss
+        # For simplicity, use the last timestep's ego_motion as future_features
+        # In a real implementation, this would be the ego_motion of future frames
+        future_features = ego_motions[-1].clone()
+        
         return {
             'left_images': left_images,
             'right_images': right_images,
             'ego_motion': ego_motions,
             'timestamp': timestamps,
+            'future_features': future_features,  # Added for future prediction loss
         }
 
     def load_image(self, image_path):

@@ -178,8 +178,8 @@ def visualize_predictions(model, data_loader, device, output_dir, num_samples=10
             # Move batch to device
             batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
             
-            # Forward pass
-            outputs = model(batch)
+            # Forward pass with task='all' to generate all outputs
+            outputs = model(batch, task='all')
             
             # Visualize each sample in the batch
             for i in range(min(batch['left_images'].size(0), num_samples - samples_visualized)):
@@ -261,7 +261,8 @@ def train_one_epoch(model, loader, optimizer, loss_fn, device, epoch, config, sc
         # Forward pass with mixed precision if enabled
         if scaler is not None:
             with torch.cuda.amp.autocast():
-                outputs = model(batch)
+                # Set task to 'all' to generate all outputs needed for loss calculation
+                outputs = model(batch, task='all')
                 loss, loss_dict = loss_fn(outputs, batch)
                 
                 # Scale loss for gradient accumulation if needed
@@ -282,7 +283,8 @@ def train_one_epoch(model, loader, optimizer, loss_fn, device, epoch, config, sc
                 optimizer.zero_grad()
         else:
             # Standard forward pass
-            outputs = model(batch)
+            # Set task to 'all' to generate all outputs needed for loss calculation
+            outputs = model(batch, task='all')
             loss, loss_dict = loss_fn(outputs, batch)
             
             # Scale loss for gradient accumulation if needed
@@ -427,8 +429,8 @@ def validate(model, loader, loss_fn, device, epoch, config, rank=0):
             # Move batch to device
             batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
             
-            # Forward pass
-            outputs = model(batch)
+            # Forward pass with task='all' to generate all outputs needed for loss calculation
+            outputs = model(batch, task='all')
             loss, loss_dict = loss_fn(outputs, batch)
             
             # Update metrics
