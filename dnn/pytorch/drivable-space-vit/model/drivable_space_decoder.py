@@ -21,6 +21,11 @@ class MotionAwareUpsampling(nn.Module):
         self.norm = nn.GroupNorm(8, out_channels)
         self.act = nn.GELU()
         
+        # Add channel adjustment for residual connections
+        self.adjust_channels = None
+        if in_channels != out_channels:
+            self.adjust_channels = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+        
     def forward(self, x):
         x = self.upsample(x)
         x = self.conv(x)
@@ -76,14 +81,22 @@ class DrivableSpaceDecoder(nn.Module):
         self.motion_projection = nn.Linear(self.embed_dim, hidden_dim)
         
         # Progressive upsampling blocks
+        channels = [hidden_dim, hidden_dim // 2, hidden_dim // 4, hidden_dim // 8]
         self.decoder_stages = nn.ModuleList([
-            MotionAwareUpsampling(hidden_dim, hidden_dim // 2, scale_factor=2),
-            MotionAwareUpsampling(hidden_dim // 2, hidden_dim // 4, scale_factor=2),
-            MotionAwareUpsampling(hidden_dim // 4, hidden_dim // 8, scale_factor=2),
+            MotionAwareUpsampling(channels[0], channels[1], scale_factor=2),
+            MotionAwareUpsampling(channels[1], channels[2], scale_factor=2),
+            MotionAwareUpsampling(channels[2], channels[3], scale_factor=2),
+        ])
+        
+        # Channel adjustment layers for residual connections
+        self.residual_adjusters = nn.ModuleList([
+            nn.Conv2d(channels[0], channels[1], kernel_size=1) if channels[0] != channels[1] else nn.Identity(),
+            nn.Conv2d(channels[1], channels[2], kernel_size=1) if channels[1] != channels[2] else nn.Identity(),
+            nn.Conv2d(channels[2], channels[3], kernel_size=1) if channels[2] != channels[3] else nn.Identity(),
         ])
         
         # Final prediction layer
-        self.final_conv = nn.Conv2d(hidden_dim // 8, 1, kernel_size=1)
+        self.final_conv = nn.Conv2d(channels[3], 1, kernel_size=1)
         
         # Context integration with skip connections
         self.context_gate = nn.Parameter(torch.ones(1))
@@ -115,38 +128,27 @@ class DrivableSpaceDecoder(nn.Module):
             gate = torch.sigmoid(self.context_gate)
             x = x * (1 + gate * motion_spatial)
         
-        # Progressive upsampling with residual connections
-        features = []
+        # Progressive upsampling with proper residual connections
         for i, decoder_stage in enumerate(self.decoder_stages):
-            features.append(x)
+            prev_x = x  # Keep reference to previous tensor size
             
-            # Apply upsampling stage with memory optimization
-            if hasattr(torch.cuda, 'empty_cache'):
-                torch.cuda.empty_cache()  # Free up memory before upsampling
-            
+            # Apply upsampling stage
             x = decoder_stage(x)
             
-            # Add residual if resolution matches
-            if x.size(2) == features[-1].size(2) * 2:
-                # Use more memory-efficient approach for interpolation
-                with torch.cuda.amp.autocast(enabled=True):  # Use reduced precision
-                    upsampled_prev = F.interpolate(
-                        features[-1], 
-                        size=(x.size(2), x.size(3)),  # Use size instead of scale_factor for stability
-                        mode='bilinear', 
-                        align_corners=False
-                    )
+            # Add residual connection with proper channel adjustment
+            if x.size(2) == prev_x.size(2) * 2:  # Check spatial dimensions match expected upsampling
+                # Apply channel adjustment and interpolation
+                adjusted_prev = self.residual_adjusters[i](prev_x)
+                upsampled_prev = F.interpolate(
+                    adjusted_prev, 
+                    size=(x.size(2), x.size(3)), 
+                    mode='bilinear', 
+                    align_corners=False
+                )
                 x = x + upsampled_prev
-            
-            # Clear references to free memory
-            if i > 0:
-                features[i-1] = None
         
         # Final prediction
         x = self.final_conv(x)
-        
-        # Free memory from features list
-        features.clear()
         
         # Resize to match input image size if needed
         if x.size(2) != self.img_size or x.size(3) != self.img_size:

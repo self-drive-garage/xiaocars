@@ -14,8 +14,12 @@ class SelfSupervisedLoss(nn.Module):
         self.future_prediction_loss = nn.MSELoss()
     
     def forward(self, outputs, batch):
-        loss = 0.0
+        # Track if we've added any loss components
+        has_loss_components = False
         loss_dict = {}
+        
+        # We'll accumulate real losses here
+        total_loss = None
         
         # Reconstruction loss (if available)
         if 'left_reconstructed' in outputs and 'right_reconstructed' in outputs:
@@ -27,7 +31,12 @@ class SelfSupervisedLoss(nn.Module):
             right_recon_loss = self.reconstruction_loss(outputs['right_reconstructed'], right_target)
             recon_loss = (left_recon_loss + right_recon_loss) / 2.0
             
-            loss += self.reconstruction_weight * recon_loss
+            if total_loss is None:
+                total_loss = self.reconstruction_weight * recon_loss
+            else:
+                total_loss += self.reconstruction_weight * recon_loss
+                
+            has_loss_components = True
             loss_dict['reconstruction_loss'] = recon_loss.item()
         
         # View consistency loss (if available)
@@ -43,7 +52,12 @@ class SelfSupervisedLoss(nn.Module):
                 right_recon.reshape(right_recon.size(0), -1)
             ).mean()
             
-            loss += self.consistency_weight * consistency
+            if total_loss is None:
+                total_loss = self.consistency_weight * consistency
+            else:
+                total_loss += self.consistency_weight * consistency
+                
+            has_loss_components = True
             loss_dict['consistency_loss'] = consistency.item()
         
         # Future prediction loss (if available)
@@ -53,8 +67,42 @@ class SelfSupervisedLoss(nn.Module):
                 batch['future_features']
             )
             
-            loss += self.future_weight * future_loss
+            if total_loss is None:
+                total_loss = self.future_weight * future_loss
+            else:
+                total_loss += self.future_weight * future_loss
+                
+            has_loss_components = True
             loss_dict['future_prediction_loss'] = future_loss.item()
         
-        loss_dict['total_loss'] = loss.item()
-        return loss, loss_dict
+        # If no loss components were added, create a dummy loss with gradients
+        if not has_loss_components:
+            # Create a dummy loss that's connected to the computation graph
+            # Get any tensor from outputs to create a proper loss with gradients
+            for key, value in outputs.items():
+                if isinstance(value, torch.Tensor) and value.requires_grad:
+                    # Create a zero loss that's connected to the graph
+                    total_loss = 0.0 * torch.sum(value)
+                    break
+            
+            # If we still don't have a valid loss (no gradable tensors found)
+            if total_loss is None:
+                print("WARNING: No loss components found and no gradable tensors in outputs. Training may fail.")
+                # Last resort: create a new parameter and use it for loss
+                dummy_param = nn.Parameter(torch.tensor([0.0], device=self._get_device(outputs)))
+                total_loss = 0.0 * dummy_param.sum()
+        
+        # Record total loss for logging
+        if isinstance(total_loss, torch.Tensor):
+            loss_dict['total_loss'] = total_loss.item()
+        else:
+            loss_dict['total_loss'] = float(total_loss) if total_loss is not None else 0.0
+            
+        return total_loss, loss_dict
+    
+    def _get_device(self, outputs):
+        """Helper method to get the device from outputs"""
+        for key, value in outputs.items():
+            if isinstance(value, torch.Tensor):
+                return value.device
+        return torch.device('cuda' if torch.cuda.is_available() else 'cpu')

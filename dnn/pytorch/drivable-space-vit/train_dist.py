@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import argparse
 import logging
@@ -36,8 +37,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Set PyTorch memory optimization environment variable
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+# Basic NCCL configuration
+os.environ["NCCL_DEBUG"] = "INFO"  # Get more diagnostic information
+os.environ["NCCL_BLOCKING_WAIT"] = "1"  # Use blocking sync to prevent CUDA errors
+
+# Force TCP communication (more reliable than InfiniBand for testing)
+os.environ["NCCL_IB_DISABLE"] = "1"  # Disable InfiniBand
+os.environ["NCCL_SOCKET_IFNAME"] = "eth0"  # Specify network interface (adjust for your system)
+
+# Extend timeouts for large models
+os.environ["NCCL_TIMEOUT"] = "1800"  # 30 minute timeout (in seconds)
+
+# Manage memory more carefully
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # Match device IDs to PCI bus order
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"  # Explicitly select just two GPUs for testing
 
 
 def load_config(config_path):
@@ -78,8 +91,8 @@ def update_config_with_args(config, args):
     if args.batch_size is not None:
         config['dataset']['batch_size'] = args.batch_size
     else:
-        # Calculate batch size based on GPU count - aim for total batch size of 32 across all GPUs
-        gpu_count = torch.cuda.device_count() if args.distributed else 1
+        # Calculate batch size based on GPU count
+        gpu_count = torch.cuda.device_count()
         per_gpu_batch = max(1, min(2, int(32 / gpu_count)))  # Limit to at most 2 per GPU, at least 1
         config['dataset'].setdefault('batch_size', per_gpu_batch)
         logger.info(f"Auto batch size: {per_gpu_batch} per GPU, {per_gpu_batch * gpu_count} total across {gpu_count} GPUs")
@@ -87,7 +100,7 @@ def update_config_with_args(config, args):
         config['dataset']['num_workers'] = args.num_workers
     else:
         # Auto-set num_workers to 2 per GPU (reduced from 4 to be safer)
-        gpu_count = torch.cuda.device_count() if args.distributed else 1
+        gpu_count = torch.cuda.device_count()
         config['dataset'].setdefault('num_workers', min(2, os.cpu_count() // gpu_count))
     
     # Update training config
@@ -141,12 +154,6 @@ def seed_everything(seed):
 def setup_environment(args):
     # Set random seed
     seed_everything(args.seed)
-    
-    # Check if CUDA is available
-    if args.device == 'cuda' and not torch.cuda.is_available():
-        logger.warning("CUDA requested but not available, falling back to CPU")
-        args.device = 'cpu'
-    
     return args
 
 
@@ -229,12 +236,12 @@ def visualize_predictions(model, data_loader, device, output_dir, num_samples=10
 
 def train_one_epoch(model, loader, optimizer, loss_fn, device, epoch, config, scaler=None, rank=0):
     # Synchronize all processes before starting training
-    if True and torch.distributed.is_initialized():
+    if torch.distributed.is_initialized():
         try:
             torch.distributed.barrier()
-            print(f"Rank {rank}: Successfully synchronized at start of epoch {epoch+1}")
+            print(f"Rank {rank}: Synchronized before epoch {epoch+1}")
         except Exception as e:
-            print(f"Rank {rank}: Error during barrier synchronization: {e}")
+            print(f"Rank {rank}: Barrier synchronization failed: {e}")
 
     model.train()
     running_loss = 0.0
@@ -323,17 +330,7 @@ def train_one_epoch(model, loader, optimizer, loss_fn, device, epoch, config, sc
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Train Drivable Space ViT model')
-    
-    # Distributed training arguments
-    parser.add_argument('--distributed', action='store_true', default=False,
-                        help='Use distributed training')
-    parser.add_argument('--world_size', type=int, default=None,
-                        help='Number of GPUs to use for distributed training')
-    parser.add_argument('--rank', type=int, default=None,
-                        help='Rank of the current process')
-    parser.add_argument('--local_rank', type=int, default=None,
-                        help='Local rank for distributed training')
+    parser = argparse.ArgumentParser(description='Train Drivable Space ViT model using distributed training')
     
     # Config file argument
     parser.add_argument('--config', type=str, default='config.yaml',
@@ -396,8 +393,6 @@ def parse_args():
     # Misc
     parser.add_argument('--seed', type=int, default=42,
                         help='Random seed')
-    parser.add_argument('--device', type=str, default='cuda',
-                        help='Device to use (cuda or cpu)')
     
     # Logging and saving (can override config)
     parser.add_argument('--log_interval', type=int, default=None,
@@ -457,73 +452,50 @@ def validate(model, loader, loss_fn, device, epoch, config, rank=0):
     return val_loss
 
 
-def setup_distributed(rank, world_size):
-    """Initialize distributed training"""
-    if world_size > 1:
-        print(f"Initializing distributed training with rank {rank} and world_size {world_size}")
-        
-        # Use environment variables for multi-node training if provided
-        master_addr = os.environ.get('MASTER_ADDR', 'localhost')
-        master_port = os.environ.get('MASTER_PORT', '12355')
-        
-        os.environ['MASTER_ADDR'] = master_addr
-        os.environ['MASTER_PORT'] = master_port
-        
-        print(f"Using MASTER_ADDR={master_addr}, MASTER_PORT={master_port}")
-        
-        # Set NCCL environment variables to help with debugging and stability
-        os.environ['NCCL_DEBUG'] = 'INFO'
-        # Remove the socket interface limitation to let NCCL auto-detect
-        # os.environ['NCCL_SOCKET_IFNAME'] = 'lo'  # Use loopback interface for local training
-        
-        # Add more debugging settings
-        os.environ['NCCL_BLOCKING_WAIT'] = '1'  # Make NCCL more robust to slow nodes
-        os.environ['NCCL_IB_TIMEOUT'] = '30'    # Increase timeout for InfiniBand operations
-        
-        # Set timeout to 120 seconds for large setups (increased from 60)
-        timeout = timedelta(seconds=120)
-        
-        # Set device for this process BEFORE initializing process group
-        local_device = rank % torch.cuda.device_count()
-        torch.cuda.set_device(local_device)
-        print(f"Set CUDA device to {local_device} for rank {rank}")
-        
-        # Initialize CUDA context on the assigned device
-        dummy = torch.zeros(1).cuda()
-        print(f"Initialized CUDA context on device {local_device} for rank {rank}")
-        
-        try:
-            # Try NCCL for GPU training (which we know is available from check_backends.py)
-            backend = "nccl"
-            print(f"Initializing process group with backend {backend} for rank {rank}")
-            dist.init_process_group(
-                backend,
-                init_method=f"env://",
-                rank=rank,
-                world_size=world_size,
-                timeout=timeout
-            )
-            print(f"Successfully initialized process group with backend {backend} for rank {rank}")
-            
-        except Exception as e:
-            print(f"NCCL initialization failed for rank {rank}: {e}")
-            print(f"Rank {rank} falling back to Gloo backend")
-            try:
-                # Fall back to Gloo if NCCL fails
-                backend = "gloo"
-                dist.init_process_group(
-                    backend,
-                    init_method=f"env://",
-                    rank=rank,
-                    world_size=world_size,
-                    timeout=timeout
-                )
-                print(f"Successfully initialized process group with backend {backend} for rank {rank}")
-            except Exception as e:
-                print(f"Failed to initialize process group with Gloo for rank {rank}: {e}")
-                raise
+def setup_distributed():
+    """Initialize distributed training using environment variables set by torchrun"""
+    # Get rank and world_size from environment variables
+    rank = int(os.environ.get('RANK', 0))
+    local_rank = int(os.environ.get('LOCAL_RANK', 0))
+    world_size = int(os.environ.get('WORLD_SIZE', 1))
+    
+    print(f"Process {rank}/{world_size} (local_rank={local_rank}) starting")
+    
+    # Set device for this process
+    if torch.cuda.is_available():
+        torch.cuda.set_device(local_rank)
+        device = torch.device(f'cuda:{local_rank}')
+        print(f"Rank {rank}: Using CUDA device {local_rank}: {torch.cuda.get_device_name(local_rank)}")
     else:
-        print("Running in single GPU mode")
+        device = torch.device('cpu')
+        print(f"Rank {rank}: Using CPU")
+    
+    # Print key environment variables
+    print(f"Rank {rank}: MASTER_ADDR={os.environ.get('MASTER_ADDR', 'not set')}")
+    print(f"Rank {rank}: MASTER_PORT={os.environ.get('MASTER_PORT', 'not set')}")
+    
+    # Initialize process group
+    print(f"Rank {rank}: About to initialize process group")
+    try:
+        # Set timeout to prevent hanging
+        timeout = timedelta(seconds=60)
+        
+        # Initialize the process group using environment variables set by torchrun
+        # Use gloo backend by default for better compatibility (like in dist_test.py)
+        torch.distributed.init_process_group(
+            "gloo",
+            timeout=timeout
+        )
+        print(f"Rank {rank}: Process group initialized successfully with Gloo")
+    except Exception as e:
+        print(f"Rank {rank}: Process group initialization failed: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+    
+    print(f"Rank {rank}: Process group state: is_initialized={dist.is_initialized()}")
+    
+    return rank, local_rank, world_size, device
 
 
 def cleanup_distributed():
@@ -534,126 +506,116 @@ def cleanup_distributed():
         print("Distributed training cleanup complete")
 
 
-def create_efficient_sampler(dataset, is_distributed, world_size=None, rank=None, shuffle=True):
-    """Create an efficient sampler for distributed training that doesn't load all indices into memory"""
-    if is_distributed:
-        # Create a distributed sampler that only loads indices for this rank
-        return DistributedSampler(
-            dataset, 
-            num_replicas=world_size,
-            rank=rank,
-            shuffle=shuffle,
-            drop_last=True  # Drop last to ensure same batch size on all GPUs
-        )
-    elif shuffle:
-        # For non-distributed training with shuffling
-        return torch.utils.data.RandomSampler(dataset)
-    else:
-        # For non-distributed training without shuffling
-        return torch.utils.data.SequentialSampler(dataset)
-
-@hydra.main(config_path="config", config_name="config", version_base=None)
-def main(hydra_config: DictConfig):
-    
+def main():
     # Add immediate logging to see if script starts
-    print("Starting training script...")
+    print("Starting distributed training script...")
     
-    # Handle command-line arguments (for backward compatibility)
-    args = parse_args()
-    args = setup_environment(args)
+    # Setup distributed training first
+    rank, local_rank, world_size, device = setup_distributed()
     
-    print(f"Arguments parsed. Distributed training: {args.distributed}")
+    # Using default config path
+    config_path = "config"
+    config_name = "config"
     
-    # Setup distributed training
-    if args.distributed:
-        if args.world_size is None:
-            # Start with a more conservative number of GPUs - just 4 to verify functionality
-            suggested_gpus = min(4, torch.cuda.device_count())
-            logger.warning(f"Starting with {suggested_gpus} GPUs (out of {torch.cuda.device_count()} available) for initial testing.")
-            logger.warning(f"Once this works, you can increase to more GPUs with --nproc_per_node=N")
-            args.world_size = suggested_gpus
-            print(f"Using {args.world_size} GPUs for training")
-        
-        # Check if we have enough GPUs
-        if args.world_size > torch.cuda.device_count():
-            logger.warning(f"Requested {args.world_size} GPUs but only {torch.cuda.device_count()} available. Using {torch.cuda.device_count()} GPUs.")
-            args.world_size = torch.cuda.device_count()
-            
-        if args.rank is None:
-            args.rank = int(os.environ.get('RANK', os.environ.get('LOCAL_RANK', 0)))
-        if args.local_rank is None:
-            args.local_rank = int(os.environ.get('LOCAL_RANK', args.rank % torch.cuda.device_count()))
-            
-        print(f"Setting up distributed training with world_size={args.world_size}, rank={args.rank}, local_rank={args.local_rank}")
-        
-        try:
-            setup_distributed(args.rank, args.world_size)
-            device = torch.device(f'cuda:{args.local_rank}')
-            print(f"Successfully set up distributed training on device {device}")
-        except Exception as e:
-            print(f"Failed to set up distributed training: {e}")
-            print("Falling back to single GPU mode")
-            args.distributed = False
-            device = torch.device(args.device)
+    # Initialize Hydra without using the decorator
+    with hydra.initialize(version_base=None, config_path=config_path):
+        hydra_config = hydra.compose(config_name=config_name)
+        config = OmegaConf.to_container(hydra_config, resolve=True)
+    
+    print(f"Configuration loaded for rank {rank}")
+    
+    # Get CLI arguments but don't use them to override Hydra config directly
+    # Instead, parse them manually and update the config
+    seed = 42
+    resume = None
+    data_dir = "datasets/xiaocars"
+    output_dir = "outputs"
+    epochs = None
+    batch_size = None
+    
+    # Extract params from environment (passed by torchrun command)
+    import sys
+    args = sys.argv[1:]
+    for i, arg in enumerate(args):
+        if arg == "--seed" and i+1 < len(args):
+            seed = int(args[i+1])
+        elif arg == "--resume" and i+1 < len(args):
+            resume = args[i+1]
+        elif arg == "--data_dir" and i+1 < len(args):
+            data_dir = args[i+1]
+        elif arg == "--output_dir" and i+1 < len(args):
+            output_dir = args[i+1]
+        elif arg == "--epochs" and i+1 < len(args):
+            epochs = int(args[i+1])
+        elif arg == "--batch_size" and i+1 < len(args):
+            batch_size = int(args[i+1])
+    
+    # Set seed for reproducibility
+    seed_everything(seed)
+    
+    # Update configuration with command-line parameters
+    if epochs is not None:
+        config['training']['epochs'] = epochs
+    
+    if batch_size is not None:
+        config['dataset']['batch_size'] = batch_size
     else:
-        device = torch.device(args.device)
-        print(f"Using single GPU mode on device {device}")
+        # Calculate batch size based on GPU count
+        gpu_count = torch.cuda.device_count()
+        per_gpu_batch = max(1, min(2, int(32 / gpu_count)))  # Limit to at most 2 per GPU, at least 1
+        config['dataset'].setdefault('batch_size', per_gpu_batch)
+        if rank == 0:
+            logger.info(f"Auto batch size: {per_gpu_batch} per GPU, {per_gpu_batch * gpu_count} total across {gpu_count} GPUs")
     
-    # Create a dict config from Hydra's DictConfig
-    # This allows easier manipulation and saving
-    config = OmegaConf.to_container(hydra_config, resolve=True)
+    # Auto-set num_workers to 2 per GPU (reduced from 4 to be safer)
+    if config['dataset'].get('num_workers') is None:
+        gpu_count = torch.cuda.device_count()
+        config['dataset']['num_workers'] = min(2, os.cpu_count() // gpu_count)
     
-    # Update config with command-line arguments (if provided)
-    config = update_config_with_args(config, args)
-    
-    print("Configuration loaded and updated")
+    print(f"Configuration updated for rank {rank}")
     
     # Create output directory
-    output_dir = Path(args.output_dir)
-    if args.rank == 0:  # Only create directories on main process
-        output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = Path(output_dir)
+    if rank == 0:  # Only create directories on main process
+        output_path.mkdir(parents=True, exist_ok=True)
         
         # Create checkpoint directory
-        checkpoint_dir = output_dir / 'checkpoints'
+        checkpoint_dir = output_path / 'checkpoints'
         checkpoint_dir.mkdir(exist_ok=True)
         
         # Create visualization directory
-        viz_dir = output_dir / 'visualizations'
+        viz_dir = output_path / 'visualizations'
         viz_dir.mkdir(exist_ok=True)
         
         # Set up logging to file
-        log_file = output_dir / f"training_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        log_file = output_path / f"training_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
         file_handler = logging.FileHandler(log_file)
         file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         logger.addHandler(file_handler)
     
     # Log hardware info
-    if args.rank == 0:  # Only log on main process
+    if rank == 0:  # Only log on main process
         logger.info(f"Using device: {device}")
         if device.type == 'cuda':
             logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
             logger.info(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
             logger.info(f"CUDA Version: {torch.version.cuda}")
-            if args.distributed:
-                logger.info(f"Using distributed training with {args.world_size} GPUs")
+            logger.info(f"Using distributed training with {world_size} GPUs")
     
     # Save merged config to output directory
-    if args.rank == 0:  # Only save on main process
-        with open(output_dir / 'used_config.yaml', 'w') as f:
+    if rank == 0:  # Only save on main process
+        with open(output_path / 'used_config.yaml', 'w') as f:
             yaml.dump(config, f)
     
     # Setup tensorboard (only on main process)
-    if args.rank == 0:
-        writer = SummaryWriter(log_dir=output_dir / 'logs')
-    else:
-        writer = None
+    writer = SummaryWriter(log_dir=output_path / 'logs') if rank == 0 else None
     
     # Create datasets and dataloaders
-    if args.rank == 0:
+    if rank == 0:
         logger.info("Creating datasets...")
     
     train_dataset = DrivingDataset(
-        data_dir=args.data_dir,
+        data_dir=data_dir,
         split='train',
         seq_len=config['dataset']['seq_len'],
         img_size=config['model']['img_size'],
@@ -663,7 +625,7 @@ def main(hydra_config: DictConfig):
     )
     
     val_dataset = DrivingDataset(
-        data_dir=args.data_dir,
+        data_dir=data_dir,
         split='val',
         seq_len=config['dataset']['seq_len'],
         img_size=config['model']['img_size'],
@@ -672,22 +634,35 @@ def main(hydra_config: DictConfig):
         config=config,
     )
     
-    if args.rank == 0:
+    if rank == 0:
         logger.info(f"Train dataset size: {len(train_dataset)}")
         logger.info(f"Validation dataset size: {len(val_dataset)}")
     
-    # Create distributed samplers if using distributed training
-    train_sampler = create_efficient_sampler(train_dataset, args.distributed, args.world_size, args.rank)
-    val_sampler = create_efficient_sampler(val_dataset, args.distributed, args.world_size, args.rank, False)
+    # Create distributed samplers
+    train_sampler = DistributedSampler(
+        train_dataset, 
+        num_replicas=world_size,
+        rank=rank,
+        shuffle=True,
+        drop_last=True  # Drop last to ensure same batch size on all GPUs
+    )
+    
+    val_sampler = DistributedSampler(
+        val_dataset, 
+        num_replicas=world_size,
+        rank=rank,
+        shuffle=False,
+        drop_last=True  # Drop last to ensure same batch size on all GPUs
+    )
     
     train_loader = create_dataloader(
         train_dataset,
         batch_size=config['dataset']['batch_size'],
         num_workers=config['dataset']['num_workers'],
-        shuffle=(train_sampler is None),
+        shuffle=False,  # Don't shuffle here, the sampler will do it
         sampler=train_sampler,
         config=config,
-        debug=True  # Ensure we're not in debug mode for actual training
+        debug=False  # Ensure we're not in debug mode for actual training
     )
     
     val_loader = create_dataloader(
@@ -701,7 +676,7 @@ def main(hydra_config: DictConfig):
     )
     
     # Create model
-    if args.rank == 0:
+    if rank == 0:
         logger.info("Creating model...")
     
     model_config = {
@@ -721,10 +696,10 @@ def main(hydra_config: DictConfig):
     start_epoch = 0
     best_val_loss = float('inf')
     
-    if args.resume:
-        if args.rank == 0:
-            logger.info(f"Resuming from checkpoint: {args.resume}")
-        model, checkpoint = load_model_from_checkpoint(args.resume, device=device, config=config)
+    if resume:
+        if rank == 0:
+            logger.info(f"Resuming from checkpoint: {resume}")
+        model, checkpoint = load_model_from_checkpoint(resume, device=device, config=config)
         optimizer = create_optimizer(model, config['training']['lr'], config['training']['weight_decay'], config=config)
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         start_epoch = checkpoint['epoch'] + 1
@@ -743,7 +718,7 @@ def main(hydra_config: DictConfig):
         if 'best_val_loss' in checkpoint:
             best_val_loss = checkpoint['best_val_loss']
             
-        if args.rank == 0:
+        if rank == 0:
             logger.info(f"Resuming from epoch {start_epoch} with validation loss {best_val_loss:.6f}")
     else:
         model = create_model(**model_config, config=config)
@@ -757,7 +732,7 @@ def main(hydra_config: DictConfig):
         )
     
     # Print model summary on main process
-    if args.rank == 0:
+    if rank == 0:
         param_count = sum(p.numel() for p in model.parameters())
         logger.info(f"Model parameter count: {param_count / 1e6:.2f}M parameters")
         
@@ -772,23 +747,21 @@ def main(hydra_config: DictConfig):
         config=config
     )
     
-    # Move model to device and wrap with DDP if using distributed training
+    # Move model to device and wrap with DDP
     model = model.to(device)
-    if args.distributed:
-        model = DDP(model, device_ids=[args.local_rank], output_device=args.local_rank)
+    model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
     
     # Set up mixed precision training if requested
     scaler = torch.cuda.amp.GradScaler() if config['training']['mixed_precision'] else None
     
     # Training loop
-    if args.rank == 0:
+    if rank == 0:
         logger.info(f"Starting training from epoch {start_epoch} to {config['training']['epochs']}")
     
     for epoch in range(start_epoch, config['training']['epochs']):
-        if args.distributed:
-            train_sampler.set_epoch(epoch)
+        train_sampler.set_epoch(epoch)
             
-        if args.rank == 0:
+        if rank == 0:
             logger.info(f"Starting epoch {epoch+1}/{config['training']['epochs']}")
         
         # Train for one epoch
@@ -801,7 +774,7 @@ def main(hydra_config: DictConfig):
             epoch=epoch,
             config=config,
             scaler=scaler,
-            rank=args.rank,
+            rank=rank,
         )
         
         # Update learning rate
@@ -816,11 +789,11 @@ def main(hydra_config: DictConfig):
                 device=device,
                 epoch=epoch,
                 config=config,
-                rank=args.rank,
+                rank=rank,
             )
             
             # Log metrics on main process
-            if args.rank == 0:
+            if rank == 0:
                 writer.add_scalar('Loss/train', train_loss, epoch)
                 writer.add_scalar('Loss/val', val_loss, epoch)
                 writer.add_scalar('LR', optimizer.param_groups[0]['lr'], epoch)
@@ -834,7 +807,7 @@ def main(hydra_config: DictConfig):
                     
                     # Save checkpoint
                     save_model_checkpoint(
-                        model=model.module if args.distributed else model,  # Unwrap DDP if needed
+                        model=model.module,  # Unwrap DDP
                         optimizer=optimizer,
                         scheduler=scheduler,
                         epoch=epoch,
@@ -846,9 +819,9 @@ def main(hydra_config: DictConfig):
                     )
             
             # Save regular checkpoint on main process
-            if args.rank == 0 and epoch % config['logging']['save_interval'] == 0:
+            if rank == 0 and epoch % config['logging']['save_interval'] == 0:
                 save_model_checkpoint(
-                    model=model.module if args.distributed else model,  # Unwrap DDP if needed
+                    model=model.module,  # Unwrap DDP
                     optimizer=optimizer,
                     scheduler=scheduler,
                     epoch=epoch,
@@ -860,24 +833,24 @@ def main(hydra_config: DictConfig):
                 )
                 
             # Visualize predictions on main process
-            if args.rank == 0 and (epoch + 1) % config['logging']['visualize_every'] == 0:
+            if rank == 0 and (epoch + 1) % config['logging']['visualize_every'] == 0:
                 logger.info("Visualizing predictions...")
                 epoch_viz_dir = viz_dir / f'epoch_{epoch+1}'
                 epoch_viz_dir.mkdir(exist_ok=True)
                 
                 visualize_predictions(
-                    model=model.module if args.distributed else model,  # Unwrap DDP if needed
+                    model=model.module,  # Unwrap DDP
                     data_loader=val_loader,
                     device=device,
                     output_dir=epoch_viz_dir,
                     num_samples=config['logging']['num_viz_samples'],
-                    rank=args.rank,
+                    rank=rank,
                 )
     
     # Save final model on main process
-    if args.rank == 0:
+    if rank == 0:
         save_model_checkpoint(
-            model=model.module if args.distributed else model,  # Unwrap DDP if needed
+            model=model.module,  # Unwrap DDP
             optimizer=optimizer,
             scheduler=scheduler,
             epoch=config['training']['epochs'] - 1,
@@ -893,8 +866,7 @@ def main(hydra_config: DictConfig):
             writer.close()
     
     # Cleanup distributed training
-    if args.distributed:
-        cleanup_distributed()
+    cleanup_distributed()
 
 if __name__ == "__main__":
     main()
