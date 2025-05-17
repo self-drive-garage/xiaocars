@@ -194,6 +194,9 @@ class StereoTransformer(nn.Module):
             for _ in range(depth // 3)  # Use 1/3 of layers for temporal modeling
         ])
         
+        # Temporal projection layer for combined CLS tokens
+        self.temporal_projection = nn.Linear(2 * self.embed_dim, self.embed_dim)
+        
         # Ego motion encoder
         self.ego_motion_encoder = EgoMotionEncoder(
             ego_motion_dim=ego_motion_dim,
@@ -297,6 +300,11 @@ class StereoTransformer(nn.Module):
         return left_patches, right_patches
     
     def temporal_encode(self, features):
+        # Check if features have double width (combined left and right CLS tokens)
+        if features.shape[-1] == 2 * self.embed_dim:
+            # Project from 2*embed_dim to embed_dim
+            features = self.temporal_projection(features)
+        
         # Apply temporal transformer layers
         for layer in self.temporal_transformer_layers:
             features = layer(features)
@@ -372,18 +380,21 @@ class StereoTransformer(nn.Module):
         right_patches = right_patches.permute(0, 2, 1, 3)  # (B, N-1, T, E)
         
         # Apply temporal transformer to CLS tokens (for global temporal understanding)
-        cls_features = self.temporal_encode(cls_temporal)  # (B, T, 2*E)
+        cls_features = self.temporal_encode(cls_temporal)  # (B, T, E) after projection
+        
+        # Store original combined features for future prediction
+        combined_cls_features = cls_temporal  # (B, T, 2*E)
         
         # Take features from the last timestamp for final representation
-        final_cls = cls_features[:, -1]  # (B, 2*E)
+        final_cls = cls_features[:, -1]  # (B, E)
         
         # Use last frame's patch features for final output (could be modified for different tasks)
         final_left_patches = left_patches[:, :, -1, :]  # (B, N-1, E)
         final_right_patches = right_patches[:, :, -1, :]  # (B, N-1, E)
         
-        # Combine CLS token with patches for the final representation
-        final_left_cls = final_cls[:, :self.embed_dim].unsqueeze(1)  # (B, 1, E)
-        final_right_cls = final_cls[:, self.embed_dim:].unsqueeze(1)  # (B, 1, E)
+        # Split the final CLS token back into left and right components
+        final_left_cls = final_cls.unsqueeze(1)  # (B, 1, E)
+        final_right_cls = final_cls.unsqueeze(1)  # (B, 1, E)
         
         final_left = torch.cat([final_left_cls, final_left_patches], dim=1)  # (B, 1+N-1, E)
         final_right = torch.cat([final_right_cls, final_right_patches], dim=1)  # (B, 1+N-1, E)
@@ -392,7 +403,7 @@ class StereoTransformer(nn.Module):
         final_left = self.norm(final_left)
         final_right = self.norm(final_right)
         
-        return final_left, final_right, cls_features
+        return final_left, final_right, combined_cls_features
     
     def forward(self, batch, task='drivable_space'):
         left_imgs = batch['left_images']  # (B, T, C, H, W)

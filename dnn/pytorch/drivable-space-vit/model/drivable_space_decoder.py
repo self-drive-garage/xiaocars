@@ -72,6 +72,9 @@ class DrivableSpaceDecoder(nn.Module):
         hidden_dim = 128
         self.initial_conv = nn.Conv2d(1, hidden_dim, kernel_size=3, padding=1)
         
+        # Motion context projection layer
+        self.motion_projection = nn.Linear(self.embed_dim, hidden_dim)
+        
         # Progressive upsampling blocks
         self.decoder_stages = nn.ModuleList([
             MotionAwareUpsampling(hidden_dim, hidden_dim // 2, scale_factor=2),
@@ -101,7 +104,10 @@ class DrivableSpaceDecoder(nn.Module):
         
         # Apply motion context if available
         if motion_context is not None:
-            # Reshape motion context to spatial dimensions - assume (B, embed_dim)
+            # Project motion context to match hidden dimension
+            motion_context = self.motion_projection(motion_context)
+            
+            # Reshape motion context to spatial dimensions
             motion_spatial = motion_context.reshape(B, -1, 1, 1)
             motion_spatial = motion_spatial.expand(-1, -1, x.size(2), x.size(3))
             

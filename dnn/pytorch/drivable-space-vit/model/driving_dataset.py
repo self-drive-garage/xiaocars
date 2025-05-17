@@ -55,6 +55,7 @@ class DrivingDataset(Dataset):
         random_sequence=None,
         cache_images=None,
         config=None,
+        debug: bool = True,
     ):
         self.data_dir = Path(data_dir)
         self.split = split
@@ -124,6 +125,13 @@ class DrivingDataset(Dataset):
         # Load parquet file
         self.metadata = pd.read_parquet(self.metadata_file)
         
+        # Debug mode: use only 5 log IDs
+        if debug:
+            unique_log_ids = self.metadata['log_id'].unique()
+            selected_log_ids = unique_log_ids[:5]  # Take first 5 log IDs
+            self.metadata = self.metadata[self.metadata['log_id'].isin(selected_log_ids)]
+            logger.info(f"Debug mode: Using {len(selected_log_ids)} log IDs: {selected_log_ids}")
+        
         # Group by log_id first
         self.log_sequences = {}
         
@@ -151,11 +159,11 @@ class DrivingDataset(Dataset):
                     'timestamp': group.iloc[i]['timestamp'],
                     'left_image_path': group.iloc[i]["stereo_front_left"],
                     'right_image_path': group.iloc[i]["stereo_front_right"],
-                    'translation': group.iloc[i]['translation'],
-                    'rotation': group.iloc[i]['rotation'],
-                    'velocity': group.iloc[i]['velocity'],
-                    'acceleration': group.iloc[i]['acceleration'],
-                    'angular_velocity': group.iloc[i]['angular_velocity']
+                    'translation': np.array(group.iloc[i]['translation'].tolist(), dtype=np.float32),  # Convert to list first
+                    'rotation': np.array(group.iloc[i]['rotation'].tolist(), dtype=np.float32),
+                    'velocity': np.array(group.iloc[i]['velocity'].tolist(), dtype=np.float32),
+                    'acceleration': np.array(group.iloc[i]['acceleration'].tolist(), dtype=np.float32),
+                    'angular_velocity': np.array(group.iloc[i]['angular_velocity'].tolist(), dtype=np.float32)
                 })
             
             # Only keep logs with enough frames for at least one sequence
@@ -164,6 +172,16 @@ class DrivingDataset(Dataset):
                 if self.max_log_frames > 0:
                     valid_frames = valid_frames[:self.max_log_frames]
                 self.log_sequences[log_id] = valid_frames
+            
+            # In __init__, after loading the first frame of each log:
+            if debug and len(valid_frames) > 0:
+                first_frame = valid_frames[0]
+                logger.info(f"Debug - Motion value shapes for log {log_id}:")
+                logger.info(f"  translation: {first_frame['translation'].shape}")
+                logger.info(f"  rotation: {first_frame['rotation'].shape}")
+                logger.info(f"  velocity: {first_frame['velocity'].shape}")
+                logger.info(f"  acceleration: {first_frame['acceleration'].shape}")
+                logger.info(f"  angular_velocity: {first_frame['angular_velocity'].shape}")
         
         # Create flat list of valid sequences for indexing
         self.sequences = []
@@ -195,17 +213,25 @@ class DrivingDataset(Dataset):
             right_img = self.load_image(frame['right_image_path'])
             
             # Extract ego motion features
-            ego_motion_values = (
-                frame['translation'] +  # 3 values
-                frame['rotation'] +     # 3 values
-                frame['velocity'] +     # 3 values
-                frame['acceleration'] + # 3 values
-                frame['angular_velocity']  # 3 values
-            )
+            # Convert 3x3 rotation matrix to Euler angles
+            r = frame['rotation']  # 3x3 rotation matrix
+            # Extract Euler angles from rotation matrix (roll, pitch, yaw)
+            roll = np.arctan2(r[2, 1], r[2, 2])
+            pitch = np.arctan2(-r[2, 0], np.sqrt(r[2, 1]**2 + r[2, 2]**2))
+            yaw = np.arctan2(r[1, 0], r[0, 0])
+            rotation_euler = np.array([roll, pitch, yaw], dtype=np.float32)
+            
+            ego_motion_values = np.concatenate([
+                frame['translation'],  # Already numpy array (3,)
+                rotation_euler,        # Euler angles (3,)
+                frame['velocity'],     # Already numpy array (3,)
+                frame['acceleration'], # Already numpy array (3,)
+                frame['angular_velocity']  # Already numpy array (3,)
+            ])
             
             left_images.append(left_img)
             right_images.append(right_img)
-            ego_motions.append(torch.tensor(ego_motion_values, dtype=torch.float32))
+            ego_motions.append(torch.from_numpy(ego_motion_values))
             timestamps.append(torch.tensor(frame['timestamp'], dtype=torch.float64))
         
         # Stack sequences
@@ -221,8 +247,57 @@ class DrivingDataset(Dataset):
             'timestamp': timestamps,
         }
 
+    def load_image(self, image_path):
+        """Load and transform an image from the given path.
+        
+        Args:
+            image_path (str): Path to the image file
+            
+        Returns:
+            torch.Tensor: Transformed image tensor of shape [C, H, W]
+        """
+        # Convert to Path object if string
+        image_path = Path(image_path)
+        
+        # Check if image is in cache
+        if self.cache_images and str(image_path) in self.image_cache:
+            return self.image_cache[str(image_path)]
+        
+        # Load image
+        try:
+            image = Image.open(image_path).convert('RGB')
+        except Exception as e:
+            logger.error(f"Error loading image {image_path}: {e}")
+            raise
+        
+        # Apply transforms
+        if self.transform is not None:
+            image = self.transform(image)
+        
+        # Cache if enabled
+        if self.cache_images:
+            self.image_cache[str(image_path)] = image
+        
+        return image
 
-def create_dataloader(dataset, batch_size=None, num_workers=None, shuffle=True, sampler=None, config=None):
+    def clear_cache(self):
+        """Clear the image cache if caching is enabled."""
+        if self.cache_images:
+            self.image_cache.clear()
+            logger.info("Image cache cleared")
+
+    def get_cache_size(self):
+        """Get the current size of the image cache in MB."""
+        if not self.cache_images:
+            return 0
+        
+        total_size = 0
+        for tensor in self.image_cache.values():
+            total_size += tensor.element_size() * tensor.nelement()
+        
+        return total_size / (1024 * 1024)  # Convert to MB
+
+def create_dataloader(dataset, batch_size=None, num_workers=None, shuffle=True, sampler=None, config=None, debug=False):
     """Create data loader for the dataset"""
     # Get default configuration
     default_config = get_default_config()
@@ -231,10 +306,14 @@ def create_dataloader(dataset, batch_size=None, num_workers=None, shuffle=True, 
     dataset_config = {}
     if config is not None and 'dataset' in config:
         dataset_config = config['dataset']
-        
-    # Use provided parameters if given, otherwise use config, fallback to defaults
-    batch_size = batch_size if batch_size is not None else dataset_config.get('batch_size', default_config['dataset']['batch_size'])
-    num_workers = num_workers if num_workers is not None else dataset_config.get('num_workers', default_config['dataset']['num_workers'])
+    
+    # In debug mode, use smaller batch size and fewer workers
+    if debug:
+        batch_size = 2
+        num_workers = 2
+    else:
+        batch_size = batch_size if batch_size is not None else dataset_config.get('batch_size', default_config['dataset']['batch_size'])
+        num_workers = num_workers if num_workers is not None else dataset_config.get('num_workers', default_config['dataset']['num_workers'])
     
     return DataLoader(
         dataset,
