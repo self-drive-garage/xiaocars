@@ -55,7 +55,7 @@ class DrivingDataset(Dataset):
         random_sequence=None,
         cache_images=None,
         config=None,
-        debug: bool = True,
+        debug: bool = False,
     ):
         self.data_dir = Path(data_dir)
         self.split = split
@@ -303,7 +303,7 @@ class DrivingDataset(Dataset):
         
         return total_size / (1024 * 1024)  # Convert to MB
 
-def create_dataloader(dataset, batch_size=None, num_workers=None, shuffle=True, sampler=None, config=None, debug=True):
+def create_dataloader(dataset, batch_size=None, num_workers=None, shuffle=True, sampler=None, config=None, debug=False):
     """Create data loader with safer defaults for distributed training"""
     # Get default configuration
     default_config = get_default_config()

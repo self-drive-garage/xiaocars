@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 class MotionGuidedFuturePredictor(nn.Module):
     """
-    Enhanced future prediction module that uses ego motion to guide prediction of future frames
+    Memory-efficient future prediction module that uses ego motion to guide prediction of future frames
     """
     def __init__(
         self,
@@ -15,49 +15,45 @@ class MotionGuidedFuturePredictor(nn.Module):
     ):
         super().__init__()
         
+        # Reduce internal dimensions to save memory
         self.embed_dim = embed_dim
         self.ego_motion_dim = ego_motion_dim
+        self.internal_dim = embed_dim // 2  # Use half the dimension for internal processing
         
-        # Transform ego motion to feature space
+        # Transform ego motion to feature space (with reduced dimensions)
         self.motion_transform = nn.Sequential(
-            nn.Linear(ego_motion_dim, embed_dim),
+            nn.Linear(ego_motion_dim, self.internal_dim),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(embed_dim, embed_dim),
         )
         
-        # Self-attention for temporal encoding
+        # Reduce input features dimension
+        self.input_reduction = nn.Linear(embed_dim, self.internal_dim)
+        
+        # Simpler attention mechanism with fewer heads and smaller dimensions
+        num_reduced_heads = max(1, num_heads // 2)  # At least 1 head
         self.self_attention = nn.MultiheadAttention(
-            embed_dim=embed_dim,
-            num_heads=num_heads,
+            embed_dim=self.internal_dim,
+            num_heads=num_reduced_heads,
             dropout=dropout,
             batch_first=True
         )
         
-        # Cross-attention to inject motion information
-        self.cross_attention = nn.MultiheadAttention(
-            embed_dim=embed_dim,
-            num_heads=num_heads,
-            dropout=dropout,
-            batch_first=True
-        )
-        
-        # Feed-forward network
+        # Feed-forward network (smaller expansion ratio)
         self.ffn = nn.Sequential(
-            nn.Linear(embed_dim, embed_dim * 4),
+            nn.Linear(self.internal_dim, self.internal_dim * 2),  # Reduced expansion ratio
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(embed_dim * 4, embed_dim),
+            nn.Linear(self.internal_dim * 2, self.internal_dim),
             nn.Dropout(dropout),
         )
         
         # Layer normalization
-        self.norm1 = nn.LayerNorm(embed_dim)
-        self.norm2 = nn.LayerNorm(embed_dim)
-        self.norm3 = nn.LayerNorm(embed_dim)
+        self.norm1 = nn.LayerNorm(self.internal_dim)
+        self.norm2 = nn.LayerNorm(self.internal_dim)
         
-        # Final projection
-        self.projection = nn.Linear(embed_dim, embed_dim)
+        # Final projection back to original dimension
+        self.projection = nn.Linear(self.internal_dim, embed_dim)
     
     def forward(self, features, ego_motion):
         """
@@ -73,43 +69,39 @@ class MotionGuidedFuturePredictor(nn.Module):
         # Get batch size and sequence length
         B, T, E = features.shape
         
+        # Reduce feature dimensions
+        features = self.input_reduction(features)  # (B, T, E/2)
+        
         # Transform ego motion to feature space
-        motion_features = self.motion_transform(ego_motion)  # (B, T, E)
+        motion_features = self.motion_transform(ego_motion)  # (B, T, E/2)
         
-        # Self-attention on visual features (with residual)
+        # Combine features and motion instead of using expensive cross-attention
+        combined_features = features + motion_features
+        combined_features = self.norm1(combined_features)
+        
+        # Self-attention on combined features
         attn_output, _ = self.self_attention(
-            query=features,
-            key=features,
-            value=features
+            query=combined_features,
+            key=combined_features,
+            value=combined_features
         )
-        features = features + attn_output
-        features = self.norm1(features)
+        combined_features = combined_features + attn_output
+        combined_features = self.norm2(combined_features)
         
-        # Cross-attention with motion features (with residual)
-        attn_output, _ = self.cross_attention(
-            query=features,
-            key=motion_features,
-            value=motion_features
-        )
-        features = features + attn_output
-        features = self.norm2(features)
-        
-        # Feed-forward network (with residual)
-        ffn_output = self.ffn(features)
-        features = features + ffn_output
-        features = self.norm3(features)
+        # Feed-forward network
+        combined_features = combined_features + self.ffn(combined_features)
         
         # Take the last time step as future prediction
-        future_features = features[:, -1]  # (B, E)
+        future_features = combined_features[:, -1]  # (B, E/2)
         
-        # Project to output space
+        # Project back to original dimension
         future_features = self.projection(future_features)  # (B, E)
         
         return future_features
 
 class MotionSpatialTransformer(nn.Module):
     """
-    Transformer block that uses ego motion to modulate self-attention
+    Memory-efficient transformer block that uses ego motion to modulate self-attention
     """
     def __init__(
         self,
@@ -121,22 +113,25 @@ class MotionSpatialTransformer(nn.Module):
     ):
         super().__init__()
         
+        # Use fewer heads for attention
+        num_reduced_heads = max(1, num_heads // 2)
+        
         # Multi-head self-attention
         self.attn = nn.MultiheadAttention(
             embed_dim=dim,
-            num_heads=num_heads,
+            num_heads=num_reduced_heads,
             dropout=attn_dropout,
             batch_first=True
         )
         
-        # Motion modulation
+        # Motion modulation (simplified)
         self.motion_gate = nn.Sequential(
             nn.Linear(dim, dim),
             nn.Sigmoid()
         )
         
-        # MLP block
-        mlp_hidden_dim = int(dim * mlp_ratio)
+        # MLP block with reduced expansion ratio
+        mlp_hidden_dim = int(dim * (mlp_ratio / 2))  # Half the expansion ratio
         self.mlp = nn.Sequential(
             nn.Linear(dim, mlp_hidden_dim),
             nn.GELU(),

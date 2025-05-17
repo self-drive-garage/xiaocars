@@ -5,36 +5,34 @@ import torch.nn.functional as F
 def get_default_config():
     """Return default configuration parameters for DrivableSpaceDecoder"""
     return {
-        'embed_dim': 768,
-        'img_size': 224,
+        'embed_dim': 512,  # Reduced from 768
+        'img_size': 192,   # Reduced from 224
         'patch_size': 16,
         'dropout': 0.1,
     }
 
-class MotionAwareUpsampling(nn.Module):
-    """Motion-aware upsampling block for better drivable space prediction"""
+class MemoryEfficientUpsampling(nn.Module):
+    """Memory-efficient upsampling block for drivable space prediction"""
     def __init__(self, in_channels, out_channels, scale_factor=2):
         super().__init__()
         
-        self.upsample = nn.Upsample(scale_factor=scale_factor, mode='bilinear', align_corners=False)
+        # Reduce channels before upsampling to save memory
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
         self.norm = nn.GroupNorm(8, out_channels)
         self.act = nn.GELU()
-        
-        # Add channel adjustment for residual connections
-        self.adjust_channels = None
-        if in_channels != out_channels:
-            self.adjust_channels = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+        self.upsample = nn.Upsample(scale_factor=scale_factor, mode='bilinear', align_corners=False)
         
     def forward(self, x):
-        x = self.upsample(x)
+        # Process features at lower resolution first
         x = self.conv(x)
         x = self.norm(x)
         x = self.act(x)
+        # Then upsample (more memory efficient)
+        x = self.upsample(x)
         return x
 
 class DrivableSpaceDecoder(nn.Module):
-    """Enhanced decoder for drivable space segmentation with motion awareness"""
+    """Memory-efficient decoder for drivable space segmentation"""
     def __init__(
         self,
         embed_dim=None,
@@ -62,43 +60,33 @@ class DrivableSpaceDecoder(nn.Module):
         self.num_patches = (self.img_size // self.patch_size) ** 2
         self.patch_dim = (self.img_size // self.patch_size)
         
-        # Initial projection from transformer features to spatial features
+        # Simplified projection to reduce memory
         self.projection = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim // 2),
-            nn.GELU(),
-            nn.Dropout(dropout_value),
-            nn.Linear(self.embed_dim // 2, self.embed_dim // 4),
+            nn.Linear(self.embed_dim, self.embed_dim // 4),
             nn.GELU(),
             nn.Dropout(dropout_value),
             nn.Linear(self.embed_dim // 4, self.patch_size * self.patch_size),
         )
         
-        # Convolutional decoder for progressive upsampling
-        hidden_dim = 64  # Reduced from 128 to save memory
+        # Reduced channel dimensions throughout
+        hidden_dim = 32  # Reduced from 64 to save memory
         self.initial_conv = nn.Conv2d(1, hidden_dim, kernel_size=3, padding=1)
         
         # Motion context projection layer
         self.motion_projection = nn.Linear(self.embed_dim, hidden_dim)
         
-        # Progressive upsampling blocks
-        channels = [hidden_dim, hidden_dim // 2, hidden_dim // 4, hidden_dim // 8]
+        # Use uniform channel sizes to reduce memory footprint
+        channels = [hidden_dim, hidden_dim // 2, hidden_dim // 2, hidden_dim // 2]
         self.decoder_stages = nn.ModuleList([
-            MotionAwareUpsampling(channels[0], channels[1], scale_factor=2),
-            MotionAwareUpsampling(channels[1], channels[2], scale_factor=2),
-            MotionAwareUpsampling(channels[2], channels[3], scale_factor=2),
-        ])
-        
-        # Channel adjustment layers for residual connections
-        self.residual_adjusters = nn.ModuleList([
-            nn.Conv2d(channels[0], channels[1], kernel_size=1) if channels[0] != channels[1] else nn.Identity(),
-            nn.Conv2d(channels[1], channels[2], kernel_size=1) if channels[1] != channels[2] else nn.Identity(),
-            nn.Conv2d(channels[2], channels[3], kernel_size=1) if channels[2] != channels[3] else nn.Identity(),
+            MemoryEfficientUpsampling(channels[0], channels[1], scale_factor=2),
+            MemoryEfficientUpsampling(channels[1], channels[2], scale_factor=2),
+            MemoryEfficientUpsampling(channels[2], channels[3], scale_factor=2),
         ])
         
         # Final prediction layer
         self.final_conv = nn.Conv2d(channels[3], 1, kernel_size=1)
         
-        # Context integration with skip connections
+        # Context integration
         self.context_gate = nn.Parameter(torch.ones(1))
         
     def forward(self, x, motion_context=None):
@@ -120,39 +108,19 @@ class DrivableSpaceDecoder(nn.Module):
             # Project motion context to match hidden dimension
             motion_context = self.motion_projection(motion_context)
             
-            # Reshape motion context to spatial dimensions
+            # Apply as channel-wise scaling
             motion_spatial = motion_context.reshape(B, -1, 1, 1)
-            motion_spatial = motion_spatial.expand(-1, -1, x.size(2), x.size(3))
             
-            # Gate mechanism to control motion influence
+            # Gate mechanism
             gate = torch.sigmoid(self.context_gate)
             x = x * (1 + gate * motion_spatial)
         
-        # Progressive upsampling with proper residual connections
-        for i, decoder_stage in enumerate(self.decoder_stages):
-            prev_x = x  # Keep reference to previous tensor size
-            
-            # Apply upsampling stage
+        # Process through upsampling blocks - memory efficient
+        for decoder_stage in self.decoder_stages:
             x = decoder_stage(x)
-            
-            # Add residual connection with proper channel adjustment
-            if x.size(2) == prev_x.size(2) * 2:  # Check spatial dimensions match expected upsampling
-                # Apply channel adjustment and interpolation
-                adjusted_prev = self.residual_adjusters[i](prev_x)
-                upsampled_prev = F.interpolate(
-                    adjusted_prev, 
-                    size=(x.size(2), x.size(3)), 
-                    mode='bilinear', 
-                    align_corners=False
-                )
-                x = x + upsampled_prev
         
         # Final prediction
         x = self.final_conv(x)
-        
-        # Resize to match input image size if needed
-        if x.size(2) != self.img_size or x.size(3) != self.img_size:
-            x = F.interpolate(x, size=(self.img_size, self.img_size), mode='bilinear', align_corners=False)
         
         return x
     

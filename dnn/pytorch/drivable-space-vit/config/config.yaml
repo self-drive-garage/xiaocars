@@ -2,12 +2,12 @@
 
 # Model architecture parameters
 model:
-  img_size: 224           # Input image size for ViT
+  img_size: 192           # Reduced from 224 to save memory
   patch_size: 16          # Patch size for ViT
   num_channels: 3         # RGB images
-  embed_dim: 768          # Embedding dimension
-  num_heads: 12           # Number of attention heads
-  num_layers: 12          # Number of transformer layers
+  embed_dim: 512          # Reduced from 768 to save memory
+  num_heads: 8            # Reduced from 12 to save memory
+  num_layers: 8           # Reduced from 12 to save memory
   mlp_ratio: 4            # Expansion ratio for MLP
   dropout: 0.1            # Dropout probability
   attn_dropout: 0.1       # Attention dropout probability
@@ -16,7 +16,7 @@ model:
 # Dataset parameters
 dataset:
   seq_len: 3              # Number of frames used by the model for one sample
-  batch_size: 1          # Batch size for training
+  batch_size: 16           # Reduced from 8 to save memory
   num_workers: 8          # Number of worker processes for data loading
   random_sequence: true   # Enable random sequence sampling for training
   cache_images: false     # Whether to cache images in memory
@@ -43,8 +43,9 @@ training:
   consistency_weight: 1.0     # Weight for consistency loss
   future_weight: 0.5          # Weight for future prediction loss
   temporal_weight: 0.3        # New: Weight for temporal consistency loss
-  mixed_precision: false      # Whether to use mixed precision training
-  gradient_accumulation: 1    # Number of gradient accumulation steps
+  mixed_precision: true       # Enabled mixed precision to save memory
+  gradient_accumulation: 4    # Increased to 4 to simulate batch_size=8 with lower memory
+  gradient_clipping: 1.0      # Added gradient clipping to help with large gradients
 
 # Logging and saving parameters
 logging:
