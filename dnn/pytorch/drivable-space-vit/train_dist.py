@@ -775,8 +775,8 @@ def main():
             # Update learning rate
             scheduler.step(epoch)
             
-            # Save checkpoint every epoch (only on main process)
-            if rank == 0:
+            # Save checkpoint based on save_interval (only on main process)
+            if rank == 0 and (epoch % config['logging']['save_interval'] == 0 or epoch == config['training']['epochs'] - 1):
                 save_model_checkpoint(
                     model=model.module,  # Unwrap DDP
                     optimizer=optimizer,
@@ -789,9 +789,10 @@ def main():
                     config=config
                 )
                 logger.info(f"Saved checkpoint for epoch {epoch+1}")
-                
-                # Visualize predictions right after saving checkpoint
-                logger.info("Visualizing predictions after checkpoint save...")
+            
+            # Visualize predictions based on visualize_every parameter (only on main process)
+            if rank == 0 and (epoch % config['logging']['visualize_every'] == 0 or epoch == config['training']['epochs'] - 1):
+                logger.info(f"Visualizing predictions for epoch {epoch+1}...")
                 epoch_viz_dir = viz_dir / f'epoch_{epoch+1}'
                 epoch_viz_dir.mkdir(exist_ok=True)
                 

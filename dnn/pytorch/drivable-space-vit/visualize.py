@@ -69,8 +69,21 @@ def visualize_predictions(model, data_loader, device, output_dir, num_samples=10
                 # Create figure - smaller now that we only have center view
                 fig, axes = plt.subplots(2, 2, figsize=(12, 8))
                 
-                # Plot original center image
-                axes[0, 0].imshow(center_img.permute(1, 2, 0).cpu().numpy())
+                # Denormalize images for visualization
+                # Use the same normalization values as in the dataset
+                mean = torch.tensor([0.4, 0.4, 0.4], device=center_img.device)
+                std = torch.tensor([0.25, 0.25, 0.25], device=center_img.device)
+                
+                # Function to denormalize an image
+                def denormalize(img):
+                    img_denorm = img.clone()
+                    for t, m, s in zip(img_denorm, mean, std):
+                        t.mul_(s).add_(m)
+                    return torch.clamp(img_denorm, 0, 1)
+                
+                # Plot original center image (denormalized)
+                center_img_denorm = denormalize(center_img)
+                axes[0, 0].imshow(center_img_denorm.permute(1, 2, 0).cpu().numpy())
                 axes[0, 0].set_title('Center Image')
                 axes[0, 0].axis('off')
                 
@@ -81,11 +94,15 @@ def visualize_predictions(model, data_loader, device, output_dir, num_samples=10
                     axes[0, 1].set_title('Drivable Space Prediction')
                     axes[0, 1].axis('off')
                 
-                # Plot reconstruction if available
+                # Plot reconstruction if available (denormalized)
                 if center_recon is not None:
-                    axes[1, 0].imshow(center_recon[i].permute(1, 2, 0).cpu().numpy())
+                    center_recon_denorm = denormalize(center_recon[i])
+                    axes[1, 0].imshow(center_recon_denorm.permute(1, 2, 0).cpu().numpy())
                     axes[1, 0].set_title('Center Reconstruction')
                     axes[1, 0].axis('off')
+                
+                # Empty plot for the fourth position or use for additional info
+                axes[1, 1].axis('off')
                 
                 # Save figure
                 fig.tight_layout()

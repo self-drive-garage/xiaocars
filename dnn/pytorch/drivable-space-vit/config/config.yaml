@@ -34,9 +34,9 @@ dataset:
 
 training:
   # Learning rate and schedule parameters
-  lr: 5e-4                     # Increased from 1e-4 for faster convergence
+  lr: 3e-4                     # Increased from 1e-4 for faster convergence
   warmup_epochs: 5             # Reduced from 10 for more efficient training
-  min_lr: 3e-5                 # Increased from 1e-6 to prevent stalling
+  min_lr: 1e-5                 # Increased from 1e-6 to prevent stalling
   lr_schedule: "cosine"        # Confirm using cosine schedule
   
   # Optimizer parameters

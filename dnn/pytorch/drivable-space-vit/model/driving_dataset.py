@@ -106,13 +106,16 @@ class DrivingDataset(Dataset):
                     transforms.RandomHorizontalFlip(),
                     transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
                     transforms.ToTensor(),
-                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+                    # Adjusted normalization values for driving data
+                    # Values closer to actual driving image statistics (typically brighter than ImageNet)
+                    transforms.Normalize(mean=[0.4, 0.4, 0.4], std=[0.25, 0.25, 0.25]),
                 ])
             else:
                 self.transform = transforms.Compose([
                     transforms.Resize((self.img_size, self.img_size)),
                     transforms.ToTensor(),
-                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+                    # Adjusted normalization values for driving data
+                    transforms.Normalize(mean=[0.4, 0.4, 0.4], std=[0.25, 0.25, 0.25]),
                 ])
         else:
             self.transform = transform
@@ -281,7 +284,13 @@ class DrivingDataset(Dataset):
         
         # Load image
         try:
+            # Open image file and explicitly convert to RGB
+            # Some image formats might be stored in BGR format
             image = Image.open(image_path).convert('RGB')
+            
+            # Debug: print unique image path for first few images to trace color issues
+            if random.random() < 0.001:  # Only log ~0.1% of images to avoid spam
+                logger.info(f"Loaded image {image_path}, mode: {image.mode}, size: {image.size}")
         except Exception as e:
             logger.error(f"Error loading image {image_path}: {e}")
             raise
