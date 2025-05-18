@@ -1,73 +1,94 @@
-# Drivable Space ViT Configuration
+# Drivable Space ViT Configuration - Optimized for Hybrid Parallelism (DP=4, PP=2, TP=2)
 
 # Model architecture parameters
 model:
-  img_size: 256
-  patch_size: 16  
-  num_channels: 3
-  embed_dim: 512
-  hidden_dim: 128
-  num_heads: 8
-  num_layers: 12
-  mlp_ratio: 4
-  dropout: 0.1
-  attn_dropout: 0.1
-  ego_motion_dim: 9
+  img_size: 320           # Increased from 256 to benefit from distributed computation
+  patch_size: 16          # Keep patch size consistent for now
+  num_channels: 3         # Keep RGB input
+  embed_dim: 1024         # Increased from 512 to 1024 (2x larger, matching TP=2)
+  hidden_dim: 256         # Increased from 128 to 256 (2x larger, matching TP=2)
+  num_heads: 16           # Increased from 8 to 16 (must be divisible by TP=2)
+  num_layers: 24          # Increased from 12 to 24 (2x larger, matching PP=2)
+  mlp_ratio: 4            # Keep expansion ratio
+  dropout: 0.1            # Keep dropout rate
+  attn_dropout: 0.1       # Keep attention dropout
+  ego_motion_dim: 9       # Keep ego motion dimensions
 
 # Dataset parameters
 dataset:
-  seq_len: 3              # Number of frames used by the model for one sample
-  batch_size: 8           # Reduced from 8 to save memory
-  num_workers: 8          # Number of worker processes for data loading
-  random_sequence: true   # Enable random sequence sampling for training
-  cache_images: false     # Whether to cache images in memory
+  seq_len: 5              # Increased from 3 to 5 for better temporal modeling
+  batch_size: 4           # Reduced per-GPU batch size (effective batch = 4 * DP_size * grad_accum = 4 * 4 * 8 = 128)
+  num_workers: 4          # Slightly reduced for stability across many GPUs
+  random_sequence: true   # Keep random sequence sampling
+  cache_images: false     # Keep images uncached (with distributed processing, caching gives less benefit)
   temporal:
-    stride: 1             # Number of frames to skip between sequences
-    overlap: 0            # Number of overlapping frames between sequences
-    max_gap: 0.15         # Maximum allowed time gap between consecutive frames (in seconds)
-                          # 0.15s allows for some variation from the expected 0.1s (10Hz)
+    stride: 1             # Keep temporal stride
+    overlap: 0            # Keep no overlap
+    max_gap: 0.15         # Keep max gap between frames
     log_handling:
-      min_log_frames: 10  # Minimum frames required in a log
-      max_log_frames: 1000  # Maximum frames to use from a log
+      min_log_frames: 10  # Keep min frames per log
+      max_log_frames: 1000 # Keep max frames per log
     validation:
-      stride: 5           # Larger stride for validation
-      max_gap: 0.12       # Stricter gap requirement for validation (closer to 10Hz)
+      stride: 5           # Keep validation stride
+      max_gap: 0.12       # Keep validation max gap
 
 training:
   # Learning rate and schedule parameters
-  lr: 3e-4                     # Increased from 1e-4 for faster convergence
-  warmup_epochs: 5             # Reduced from 10 for more efficient training
-  min_lr: 1e-5                 # Increased from 1e-6 to prevent stalling
-  lr_schedule: "cosine"        # Confirm using cosine schedule
+  lr: 5e-4                     # Increased for larger model/batch size (scales with batch size)
+  warmup_epochs: 10            # Increased back to 10 for larger model stability
+  min_lr: 1e-5                 # Keep min learning rate
+  lr_schedule: "cosine"        # Keep cosine schedule
   
   # Optimizer parameters
-  optimizer: "AdamW"           # Explicitly use AdamW instead of Adam
-  weight_decay: 1e-4           # Keep your current weight decay
-  beta1: 0.9                   # Adam/AdamW beta1 parameter (add this)
-  beta2: 0.999                 # Adam/AdamW beta2 parameter (add this)
-  eps: 1e-8                    # Adam/AdamW epsilon parameter (add this)
+  optimizer: "AdamW"           # Keep AdamW
+  weight_decay: 1e-4           # Keep weight decay
+  beta1: 0.9                   # Keep beta1
+  beta2: 0.999                 # Keep beta2
+  eps: 1e-8                    # Keep epsilon
   
-  # Loss weights - adjusted based on your training logs
+  # Loss weights - adjusted for larger model
   reconstruction_weight: 1.0   # Keep reconstruction weight
-  consistency_weight: 0.5      # Reduce from 1.0 since this component is already well-optimized
-  future_weight: 1.0           # Increase from 0.5 to focus more on future prediction
-  temporal_weight: 0.5         # Increase from 0.3 to enhance temporal consistency
+  consistency_weight: 0.5      # Keep reduced consistency weight
+  future_weight: 1.0           # Keep increased future weight
+  temporal_weight: 0.5         # Keep temporal weight
   
   # Training optimizations
   mixed_precision: true        # Keep mixed precision for memory efficiency
-  gradient_accumulation: 8     # Keep existing accumulation steps
-  gradient_clipping: 1.0       # Keep gradient clipping to prevent explosions
+  gradient_accumulation: 8     # Keep gradient accumulation steps
+  gradient_clipping: 1.0       # Keep gradient clipping
   
-  # Additional parameters to consider
-  epochs: 300                  # Keep your planned 300 epochs
-  amp_device: "cuda"           # Specify device for automatic mixed precision (to fix warnings)
+  # Add ZeRO optimization parameters
+  zero_stage: 2                # ZeRO stage 2 (optimizer state sharding)
+  zero_cpu_offload: true       # Enable CPU offloading for optimizer states
+  zero_param_offload: false    # No parameter offloading yet (enable if OOM)
+  
+  # Add pipeline parallelism parameters
+  pipe_chunks: 2               # Micro-batches per pipeline (keep low initially)
+  pipe_interleaved: true       # Use interleaved scheduling for better GPU utilization
+  
+  # Additional parameters
+  epochs: 300                  # Keep 300 epochs
+  amp_device: "cuda"           # Keep device specification
+
+# DeepSpeed specific parameters
+deepspeed:
+  activation_checkpointing: true    # Enable activation checkpointing for memory savings
+  cpu_checkpointing: false          # Only enable if struggling with GPU memory
+  contiguous_memory_optimization: true # Enable memory optimization
+  synchronize_checkpoint_boundary: true # Synchronize on checkpoint boundaries
 
 # Logging and saving parameters
 logging:
-  log_interval: 10        # Logging interval in steps
-  save_interval: 5        # Checkpoint saving interval in epochs
-  eval_interval: 1        # Evaluation interval in epochs
-  visualize_every: 5      # Visualize predictions every N epochs
-  num_viz_samples: 5     # Number of samples to visualize
-  visualize_sequences: true  # New: Whether to visualize temporal sequences 
+  log_interval: 10        # Keep logging interval
+  save_interval: 5        # Keep checkpoint saving interval
+  eval_interval: 1        # Keep evaluation interval
+  visualize_every: 5      # Keep visualization frequency
+  num_viz_samples: 5      # Keep number of samples to visualize
+  visualize_sequences: true # Keep sequence visualization
   
+  # Add new parameters for distributed training
+  profiling: 
+    enabled: true          # Enable profiling
+    start_step: 100        # Start profiling after warmup
+    end_step: 110          # Profile for 10 steps
+    output_dir: "profiles" # Directory for profiling outputs
