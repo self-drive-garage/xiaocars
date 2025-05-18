@@ -289,8 +289,8 @@ class DrivingDataset(Dataset):
             image = Image.open(image_path).convert('RGB')
             
             # Debug: print unique image path for first few images to trace color issues
-            if random.random() < 0.001:  # Only log ~0.1% of images to avoid spam
-                logger.info(f"Loaded image {image_path}, mode: {image.mode}, size: {image.size}")
+            # if random.random() < 0.001:  # Only log ~0.1% of images to avoid spam
+            #     logger.info(f"Loaded image {image_path}, mode: {image.mode}, size: {image.size}")
         except Exception as e:
             logger.error(f"Error loading image {image_path}: {e}")
             raise
