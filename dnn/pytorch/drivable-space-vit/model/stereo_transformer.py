@@ -25,7 +25,7 @@ def get_default_model_config():
         'mlp_ratio': 4,
         'dropout': 0.1,
         'attn_dropout': 0.1,
-        'ego_motion_dim': 12,
+        'ego_motion_dim': 9,
     }
 
 def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False):
@@ -516,8 +516,9 @@ class MultiViewTransformer(nn.Module):
                 future_prediction = self.future_prediction_head(cls_features, ego_motion)  # (B, 3*E)
             else:
                 # Fallback to simple prediction if no ego motion data
-                future_prediction = self.future_prediction_head(cls_features, 
-                                                              torch.zeros_like(cls_features[:, :, :ego_motion_dim]))
+                # Create a zero tensor with fixed dimension of 9 (3 velocity + 3 acceleration + 3 angular velocity)
+                zeros = torch.zeros_like(cls_features[:, :, :9])
+                future_prediction = self.future_prediction_head(cls_features, zeros)
             
             outputs['future_prediction'] = future_prediction
         

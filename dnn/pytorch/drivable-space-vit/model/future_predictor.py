@@ -9,7 +9,7 @@ class MotionGuidedFuturePredictor(nn.Module):
     def __init__(
         self,
         embed_dim,
-        ego_motion_dim=12,
+        ego_motion_dim=9,  # Updated from 15 to 9 (3 velocity + 3 acceleration + 3 angular velocity)
         num_heads=8,
         dropout=0.1,
     ):

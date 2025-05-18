@@ -160,8 +160,6 @@ class DrivingDataset(Dataset):
                     'left_image_path': group.iloc[i]["ring_front_left"],  # Updated camera keys
                     'center_image_path': group.iloc[i]["ring_front_center"],  # Updated camera keys
                     'right_image_path': group.iloc[i]["ring_front_right"],  # Updated camera keys
-                    'translation': np.array(group.iloc[i]['translation'].tolist(), dtype=np.float32),  # Convert to list first
-                    'rotation': np.array(group.iloc[i]['rotation'].tolist(), dtype=np.float32),
                     'velocity': np.array(group.iloc[i]['velocity'].tolist(), dtype=np.float32),
                     'acceleration': np.array(group.iloc[i]['acceleration'].tolist(), dtype=np.float32),
                     'angular_velocity': np.array(group.iloc[i]['angular_velocity'].tolist(), dtype=np.float32)
@@ -178,8 +176,6 @@ class DrivingDataset(Dataset):
             if debug and len(valid_frames) > 0:
                 first_frame = valid_frames[0]
                 logger.info(f"Debug - Motion value shapes for log {log_id}:")
-                logger.info(f"  translation: {first_frame['translation'].shape}")
-                logger.info(f"  rotation: {first_frame['rotation'].shape}")
                 logger.info(f"  velocity: {first_frame['velocity'].shape}")
                 logger.info(f"  acceleration: {first_frame['acceleration'].shape}")
                 logger.info(f"  angular_velocity: {first_frame['angular_velocity'].shape}")
@@ -199,10 +195,8 @@ class DrivingDataset(Dataset):
         ego_motion_data = []
         for frames in self.log_sequences.values():
             for frame in frames:
+                # Only use velocity, acceleration, and angular velocity (removing translation and rotation)
                 ego_motion_values = np.concatenate([
-                    frame['translation'],
-                    np.arctan2([frame['rotation'][2, 1], -frame['rotation'][2, 0], frame['rotation'][1, 0]], 
-                              [frame['rotation'][2, 2], np.sqrt(frame['rotation'][2, 1]**2 + frame['rotation'][2, 2]**2), frame['rotation'][0, 0]]),
                     frame['velocity'],
                     frame['acceleration'],
                     frame['angular_velocity']
@@ -235,18 +229,8 @@ class DrivingDataset(Dataset):
             center_img = self.load_image(frame['center_image_path'])  # Load center image
             right_img = self.load_image(frame['right_image_path'])
             
-            # Extract ego motion features
-            # Convert 3x3 rotation matrix to Euler angles
-            r = frame['rotation']  # 3x3 rotation matrix
-            # Extract Euler angles from rotation matrix (roll, pitch, yaw)
-            roll = np.arctan2(r[2, 1], r[2, 2])
-            pitch = np.arctan2(-r[2, 0], np.sqrt(r[2, 1]**2 + r[2, 2]**2))
-            yaw = np.arctan2(r[1, 0], r[0, 0])
-            rotation_euler = np.array([roll, pitch, yaw], dtype=np.float32)
-            
+            # Extract ego motion features - only using velocity, acceleration, and angular velocity
             ego_motion_values = np.concatenate([
-                frame['translation'],  # Already numpy array (3,)
-                rotation_euler,        # Euler angles (3,)
                 frame['velocity'],     # Already numpy array (3,)
                 frame['acceleration'], # Already numpy array (3,)
                 frame['angular_velocity']  # Already numpy array (3,)
@@ -262,12 +246,11 @@ class DrivingDataset(Dataset):
         left_images = torch.stack(left_images)  # [seq_len, C, H, W]
         center_images = torch.stack(center_images)  # [seq_len, C, H, W]
         right_images = torch.stack(right_images)  # [seq_len, C, H, W]
-        ego_motions = torch.stack(ego_motions)  # [seq_len, 15]
+        ego_motions = torch.stack(ego_motions)  # [seq_len, 9] - now 9 features instead of 15
         timestamps = torch.stack(timestamps)  # [seq_len]
         
         # Add future_features for future prediction loss
         # For simplicity, use the last timestep's ego_motion as future_features
-        # In a real implementation, this would be the ego_motion of future frames
         # Example normalization for future_features
         future_features = (ego_motions[-1] - self.ego_motion_mean.to(ego_motions.device)) / self.ego_motion_std.to(ego_motions.device)
         

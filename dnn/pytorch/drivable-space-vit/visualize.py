@@ -56,47 +56,36 @@ def visualize_predictions(model, data_loader, device, output_dir, num_samples=10
             outputs = model(batch, task='all')
             
             # Visualize each sample in the batch
-            for i in range(min(batch['left_images'].size(0), num_samples - samples_visualized)):
-                # Get current sample
-                left_img = batch['left_images'][i, -1]  # Last frame in sequence
-                right_img = batch['right_images'][i, -1]
+            for i in range(min(batch['center_images'].size(0), num_samples - samples_visualized)):
+                # Get current sample - only use center camera
+                center_img = batch['center_images'][i, -1]  # Last frame in sequence
                 
-                # Get reconstructions if available
-                left_recon = outputs.get('left_reconstructed', None)
-                right_recon = outputs.get('right_reconstructed', None)
+                # Get reconstruction if available
+                center_recon = outputs.get('center_reconstructed', None)
                 
                 # Get drivable space prediction if available
                 drivable_space = outputs.get('drivable_space', None)
                 
-                # Create figure
-                fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+                # Create figure - smaller now that we only have center view
+                fig, axes = plt.subplots(2, 2, figsize=(12, 8))
                 
-                # Plot original left and right images
-                axes[0, 0].imshow(left_img.permute(1, 2, 0).cpu().numpy())
-                axes[0, 0].set_title('Left Image')
+                # Plot original center image
+                axes[0, 0].imshow(center_img.permute(1, 2, 0).cpu().numpy())
+                axes[0, 0].set_title('Center Image')
                 axes[0, 0].axis('off')
-                
-                axes[0, 1].imshow(right_img.permute(1, 2, 0).cpu().numpy())
-                axes[0, 1].set_title('Right Image')
-                axes[0, 1].axis('off')
-                
-                # Plot reconstructions if available
-                if left_recon is not None:
-                    axes[1, 0].imshow(left_recon[i].permute(1, 2, 0).cpu().numpy())
-                    axes[1, 0].set_title('Left Reconstruction')
-                    axes[1, 0].axis('off')
-                
-                if right_recon is not None:
-                    axes[1, 1].imshow(right_recon[i].permute(1, 2, 0).cpu().numpy())
-                    axes[1, 1].set_title('Right Reconstruction')
-                    axes[1, 1].axis('off')
                 
                 # Plot drivable space prediction if available
                 if drivable_space is not None:
                     drivable_map = drivable_space[i].squeeze().cpu().numpy()
-                    axes[0, 2].imshow(drivable_map, cmap='viridis')
-                    axes[0, 2].set_title('Drivable Space Prediction')
-                    axes[0, 2].axis('off')
+                    axes[0, 1].imshow(drivable_map, cmap='viridis')
+                    axes[0, 1].set_title('Drivable Space Prediction')
+                    axes[0, 1].axis('off')
+                
+                # Plot reconstruction if available
+                if center_recon is not None:
+                    axes[1, 0].imshow(center_recon[i].permute(1, 2, 0).cpu().numpy())
+                    axes[1, 0].set_title('Center Reconstruction')
+                    axes[1, 0].axis('off')
                 
                 # Save figure
                 fig.tight_layout()

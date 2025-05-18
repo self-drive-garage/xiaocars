@@ -612,6 +612,19 @@ def main(hydra_config: DictConfig):
                     additional_data={'best_val_loss': best_val_loss},
                     config=config
                 )
+            
+            # Visualize predictions right after saving checkpoint
+            logger.info("Visualizing predictions after checkpoint save...")
+            epoch_viz_dir = viz_dir / f'epoch_{epoch+1}'
+            epoch_viz_dir.mkdir(exist_ok=True)
+            
+            visualize_predictions(
+                model=model,
+                data_loader=val_loader,
+                device=device,
+                output_dir=epoch_viz_dir,
+                num_samples=config['logging']['num_viz_samples'],
+            )
         
         # Save regular checkpoint
         if epoch % config['logging']['save_interval'] == 0:
@@ -627,9 +640,8 @@ def main(hydra_config: DictConfig):
                 config=config
             )
             
-        # Visualize predictions
-        if (epoch + 1) % config['logging']['visualize_every'] == 0:
-            logger.info("Visualizing predictions...")
+            # Visualize predictions right after saving checkpoint
+            logger.info("Visualizing predictions after checkpoint save...")
             epoch_viz_dir = viz_dir / f'epoch_{epoch+1}'
             epoch_viz_dir.mkdir(exist_ok=True)
             
@@ -652,6 +664,19 @@ def main(hydra_config: DictConfig):
         model_config=model_config,
         additional_data={'best_val_loss': best_val_loss},
         config=config
+    )
+    
+    # Visualize predictions after final checkpoint
+    logger.info("Visualizing predictions after final checkpoint...")
+    final_viz_dir = viz_dir / 'final'
+    final_viz_dir.mkdir(exist_ok=True)
+    
+    visualize_predictions(
+        model=model,
+        data_loader=val_loader,
+        device=device,
+        output_dir=final_viz_dir,
+        num_samples=config['logging']['num_viz_samples'],
     )
     
     logger.info("Training complete!")

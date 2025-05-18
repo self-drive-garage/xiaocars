@@ -11,7 +11,7 @@ model:
   mlp_ratio: 4            # Expansion ratio for MLP
   dropout: 0.1            # Dropout probability
   attn_dropout: 0.1       # Attention dropout probability
-  ego_motion_dim: 15      # Updated: 3(translation) + 3(rotation) + 3(velocity) + 3(acceleration) + 3(angular_velocity)
+  ego_motion_dim: 9       # 3(velocity) + 3(acceleration) + 3(angular_velocity)
 
 # Dataset parameters
 dataset:
@@ -65,7 +65,8 @@ training:
 logging:
   log_interval: 10        # Logging interval in steps
   save_interval: 5        # Checkpoint saving interval in epochs
-  eval_interval: 5        # Evaluation interval in epochs
+  eval_interval: 1        # Evaluation interval in epochs
   visualize_every: 5      # Visualize predictions every N epochs
-  num_viz_samples: 10     # Number of samples to visualize
+  num_viz_samples: 5     # Number of samples to visualize
   visualize_sequences: true  # New: Whether to visualize temporal sequences 
+  

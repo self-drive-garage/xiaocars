@@ -4,7 +4,7 @@ import torch.nn as nn
 def get_default_config():
     """Return default configuration parameters for EgoMotionEncoder"""
     return {
-        'ego_motion_dim': 12,  # 3 position + 3 orientation + 2 accel + 2 velocity + 2 angular velocity
+        'ego_motion_dim': 9,  # 3 velocity + 3 acceleration + 3 angular velocity
         'embed_dim': 768,
         'dropout': 0.1,
     }
@@ -103,48 +103,38 @@ class EgoMotionEncoder(nn.Module):
         # x shape: (batch_size, seq_len, ego_motion_dim)
         B, T, D = x.shape
         
-        # Use enhanced processing if we have the expected dimensions (12+)
-        if D >= 12:
-            # Split into components
-            position = x[:, :, 0:3]         # x, y, z position
-            orientation = x[:, :, 3:6]      # roll, pitch, yaw
-            acceleration = x[:, :, 6:8]     # x, y acceleration
-            velocity = x[:, :, 8:10]        # x, y velocity
-            angular_vel = x[:, :, 10:12]    # roll, yaw angular velocity
+        # Use enhanced processing if we have the expected dimensions (9)
+        if D >= 9:
+            # Split into components based on new structure
+            velocity = x[:, :, 0:3]        # x, y, z velocity
+            acceleration = x[:, :, 3:6]    # x, y, z acceleration
+            angular_vel = x[:, :, 6:9]     # x, y, z angular velocity
             
-            # Process separately
-            pos_features = self.position_encoder(position)
-            ori_features = self.orientation_encoder(orientation)
-            accel_features = self.accel_encoder(acceleration)
-            vel_features = self.velocity_encoder(velocity)
-            ang_vel_features = self.angular_vel_encoder(angular_vel)
+            # Process velocity using position encoder
+            vel_features = self.position_encoder(velocity)
+            
+            # Process acceleration
+            accel_features = self.position_encoder(acceleration)
+            
+            # Process angular velocity using orientation encoder
+            ang_vel_features = self.orientation_encoder(angular_vel)
+            
+            # Process with component encoders (reusing existing components)
+            # We're reusing the position encoder for velocity and acceleration
+            # and orientation encoder for angular velocity
+            
+            # Generate dummy features for backward compatibility
+            pos_features = torch.zeros_like(vel_features)
+            ori_features = torch.zeros_like(ang_vel_features)
             
             # Concatenate features
             combined = torch.cat([
-                pos_features, 
-                ori_features, 
+                pos_features,  # Placeholder
+                ori_features,  # Placeholder
                 accel_features, 
                 vel_features, 
                 ang_vel_features
             ], dim=-1)
-            
-            # Final projection
-            output = self.projection(combined)
-            
-            return output  # (batch_size, seq_len, embed_dim)
-        # Fallback for original implementation (6+ dimensions)
-        elif D >= 6:
-            # Split into components
-            position = x[:, :, 0:3]  # x, y, z position
-            orientation = x[:, :, 3:6]  # roll, pitch, yaw
-            
-            # Process separately
-            pos_features = self.position_encoder(position)
-            ori_features = self.orientation_encoder(orientation)
-            dyn_features = self.dynamics_encoder(x)
-            
-            # Concatenate features
-            combined = torch.cat([pos_features, ori_features, dyn_features], dim=-1)
             
             # Final projection
             output = self.projection(combined)
@@ -217,7 +207,7 @@ class MotionGuidedAttention(nn.Module):
 
 class MotionGuidedFramePredictor(nn.Module):
     """Predicts future frames based on current frame and ego motion"""
-    def __init__(self, embed_dim, ego_motion_dim):
+    def __init__(self, embed_dim, ego_motion_dim=9):
         super().__init__()
         
         self.motion_transform = nn.Sequential(

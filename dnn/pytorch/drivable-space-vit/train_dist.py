@@ -789,6 +789,20 @@ def main():
                     config=config
                 )
                 logger.info(f"Saved checkpoint for epoch {epoch+1}")
+                
+                # Visualize predictions right after saving checkpoint
+                logger.info("Visualizing predictions after checkpoint save...")
+                epoch_viz_dir = viz_dir / f'epoch_{epoch+1}'
+                epoch_viz_dir.mkdir(exist_ok=True)
+                
+                visualize_predictions(
+                    model=model.module,  # Unwrap DDP
+                    data_loader=val_loader,
+                    device=device,
+                    output_dir=epoch_viz_dir,
+                    num_samples=config['logging']['num_viz_samples'],
+                    rank=rank,
+                )
             
             # Validate at regular intervals
             if epoch % config['logging']['eval_interval'] == 0:
@@ -827,21 +841,20 @@ def main():
                             additional_data={'best_val_loss': best_val_loss},
                             config=config
                         )
-                    
-                # Visualize predictions on main process
-                if rank == 0 and (epoch + 1) % config['logging']['visualize_every'] == 0:
-                    logger.info("Visualizing predictions...")
-                    epoch_viz_dir = viz_dir / f'epoch_{epoch+1}'
-                    epoch_viz_dir.mkdir(exist_ok=True)
-                    
-                    visualize_predictions(
-                        model=model.module,  # Unwrap DDP
-                        data_loader=val_loader,
-                        device=device,
-                        output_dir=epoch_viz_dir,
-                        num_samples=config['logging']['num_viz_samples'],
-                        rank=rank,
-                    )
+                        
+                        # Visualize predictions after saving best model checkpoint
+                        logger.info("Visualizing predictions after best checkpoint save...")
+                        best_viz_dir = viz_dir / f'best_epoch_{epoch+1}'
+                        best_viz_dir.mkdir(exist_ok=True)
+                        
+                        visualize_predictions(
+                            model=model.module,  # Unwrap DDP
+                            data_loader=val_loader,
+                            device=device,
+                            output_dir=best_viz_dir,
+                            num_samples=config['logging']['num_viz_samples'],
+                            rank=rank,
+                        )
         
         # Save final model on main process
         if rank == 0:
@@ -855,6 +868,20 @@ def main():
                 model_config=model_config,
                 additional_data={'best_val_loss': best_val_loss},
                 config=config
+            )
+            
+            # Visualize predictions after final checkpoint
+            logger.info("Visualizing predictions after final checkpoint...")
+            final_viz_dir = viz_dir / 'final'
+            final_viz_dir.mkdir(exist_ok=True)
+            
+            visualize_predictions(
+                model=model.module,  # Unwrap DDP
+                data_loader=val_loader,
+                device=device,
+                output_dir=final_viz_dir,
+                num_samples=config['logging']['num_viz_samples'],
+                rank=rank,
             )
             
             logger.info("Training complete!")
