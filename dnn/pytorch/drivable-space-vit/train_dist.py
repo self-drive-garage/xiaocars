@@ -255,6 +255,10 @@ def train_one_epoch(model, loader, optimizer, loss_fn, device, epoch, config, sc
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train Drivable Space ViT model using hybrid parallelism')
+
+    # Add DeepSpeed's local_rank argument that gets passed automatically
+    parser.add_argument('--local_rank', type=int, default=-1,
+                      help='Local rank passed from distributed launcher')
     
     # DeepSpeed parallel strategies
     parser.add_argument('--dp_size', type=int, default=4,
@@ -271,7 +275,7 @@ def parse_args():
                         help='Path to configuration file')
     
     # Data arguments
-    parser.add_argument('--data_dir', type=str, default='datasets/xiaocars',
+    parser.add_argument('--data_dir', type=str, default='datasets/argoversev2',
                         help='Path to dataset directory')
     parser.add_argument('--output_dir', type=str, default='outputs',
                         help='Path to save checkpoints and logs')
@@ -394,50 +398,50 @@ def validate(model, loader, loss_fn, device, epoch, config, rank=0):
     return val_loss
 
 
-def setup_distributed():
-    """Initialize distributed training using environment variables set by torchrun"""
-    # Get rank and world_size from environment variables
-    rank = int(os.environ.get('RANK', 0))
-    local_rank = int(os.environ.get('LOCAL_RANK', 0))
-    world_size = int(os.environ.get('WORLD_SIZE', 1))
+# def setup_distributed(local_rank):
+#     """Initialize distributed training using environment variables set by torchrun"""
+#     # Get rank and world_size from environment variables
+#     rank = int(os.environ.get('RANK', 0))
+#     #local_rank = int(os.environ.get('LOCAL_RANK', 0))       
+#     world_size = int(os.environ.get('WORLD_SIZE', 1))
     
-    print(f"Process {rank}/{world_size} (local_rank={local_rank}) starting")
+#     print(f"Process {rank}/{world_size} (local_rank={local_rank}) starting")
     
-    # Set device for this process
-    if torch.cuda.is_available():
-        torch.cuda.set_device(local_rank)
-        device = torch.device(f'cuda:{local_rank}')
-        print(f"Rank {rank}: Using CUDA device {local_rank}: {torch.cuda.get_device_name(local_rank)}")
-    else:
-        device = torch.device('cpu')
-        print(f"Rank {rank}: Using CPU")
+#     # Set device for this process
+#     if torch.cuda.is_available():
+#         torch.cuda.set_device(local_rank)
+#         device = torch.device(f'cuda:{local_rank}')
+#         print(f"Rank {rank}: Using CUDA device {local_rank}: {torch.cuda.get_device_name(local_rank)}")
+#     else:
+#         device = torch.device('cpu')
+#         print(f"Rank {rank}: Using CPU")
     
-    # Print key environment variables
-    print(f"Rank {rank}: MASTER_ADDR={os.environ.get('MASTER_ADDR', 'not set')}")
-    print(f"Rank {rank}: MASTER_PORT={os.environ.get('MASTER_PORT', 'not set')}")
+#     # Print key environment variables
+#     print(f"Rank {rank}: MASTER_ADDR={os.environ.get('MASTER_ADDR', 'not set')}")
+#     print(f"Rank {rank}: MASTER_PORT={os.environ.get('MASTER_PORT', 'not set')}")
     
-    # Initialize process group
-    print(f"Rank {rank}: About to initialize process group")
-    try:
-        # Set timeout to prevent hanging
-        timeout = timedelta(seconds=60)
+#     # Initialize process group
+#     print(f"Rank {rank}: About to initialize process group")
+#     try:
+#         # Set timeout to prevent hanging
+#         timeout = timedelta(seconds=60)
         
-        # Initialize the process group using environment variables set by torchrun
-        # Use NCCL backend for best GPU performance
-        torch.distributed.init_process_group(
-            "nccl",
-            timeout=timeout
-        )
-        print(f"Rank {rank}: Process group initialized successfully with NCCL")
-    except Exception as e:
-        print(f"Rank {rank}: Process group initialization failed: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+#         # Initialize the process group using environment variables set by torchrun
+#         # Use NCCL backend for best GPU performance
+#         torch.distributed.init_process_group(
+#             "nccl",
+#             timeout=timeout
+#         )
+#         print(f"Rank {rank}: Process group initialized successfully with NCCL")
+#     except Exception as e:
+#         print(f"Rank {rank}: Process group initialization failed: {e}")
+#         import traceback
+#         traceback.print_exc()
+#         sys.exit(1)
     
-    print(f"Rank {rank}: Process group state: is_initialized={dist.is_initialized()}")
+#     print(f"Rank {rank}: Process group state: is_initialized={dist.is_initialized()}")
     
-    return rank, local_rank, world_size, device
+#     return rank, local_rank, world_size, device
 
 
 def cleanup_distributed():
@@ -660,7 +664,7 @@ def generate_deepspeed_config(args, config, train_dataset_size):
     }
     
     # Save the configuration to a file
-    with open(args.deepspeed_config, 'w') as f:
+    with open("ds_config.json", 'w') as f:
         json.dump(ds_config, f, indent=4)
     
     return ds_config
@@ -672,6 +676,9 @@ def main():
     
     # Parse arguments
     args = parse_args()
+
+    local_rank = args.local_rank if args.local_rank >= 0 else int(os.environ.get('LOCAL_RANK', '0'))
+
     
     # Calculate total processes needed based on parallelism parameters
     total_process_count = args.dp_size * args.pp_size * args.tp_size
@@ -699,7 +706,7 @@ def main():
     
     # Get rank and local_rank from DeepSpeed/distributed setup
     rank = int(os.environ.get('RANK', 0))
-    local_rank = int(os.environ.get('LOCAL_RANK', 0))
+    # local_rank = int(os.environ.get('LOCAL_RANK', 0))
     world_size = int(os.environ.get('WORLD_SIZE', 1))
     device = torch.device(f'cuda:{local_rank}' if torch.cuda.is_available() else 'cpu')
     
