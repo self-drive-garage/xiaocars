@@ -55,6 +55,11 @@ os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # Match device IDs to PCI bus or
 # os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"  # Explicitly select just two GPUs for testing
 
 
+# OR for maximum performance (faster but may have slight variations)
+torch.backends.cudnn.deterministic = False
+torch.backends.cudnn.benchmark = True  # Enables auto-tuner
+
+
 def load_config(config_path):
     """Load configuration from YAML file"""
     with open(config_path, 'r') as f:

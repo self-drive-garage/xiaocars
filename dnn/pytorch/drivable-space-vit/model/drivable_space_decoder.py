@@ -9,6 +9,7 @@ def get_default_config():
         'img_size': 192,   # Reduced from 224
         'patch_size': 16,
         'dropout': 0.1,
+        'hidden_dim': 128,
     }
 
 class MemoryEfficientUpsampling(nn.Module):
@@ -55,6 +56,7 @@ class DrivableSpaceDecoder(nn.Module):
         self.embed_dim = embed_dim if embed_dim is not None else model_config.get('embed_dim', default_config['embed_dim'])
         self.img_size = img_size if img_size is not None else model_config.get('img_size', default_config['img_size'])
         self.patch_size = patch_size if patch_size is not None else model_config.get('patch_size', default_config['patch_size'])
+        self.hidden_dim = model_config.get('hidden_dim', default_config['hidden_dim'])
         dropout_value = dropout if dropout is not None else model_config.get('dropout', default_config['dropout'])
         
         self.num_patches = (self.img_size // self.patch_size) ** 2
@@ -69,14 +71,14 @@ class DrivableSpaceDecoder(nn.Module):
         )
         
         # Reduced channel dimensions throughout
-        hidden_dim = 32  # Reduced from 64 to save memory
-        self.initial_conv = nn.Conv2d(1, hidden_dim, kernel_size=3, padding=1)
+        
+        self.initial_conv = nn.Conv2d(1, self.hidden_dim, kernel_size=3, padding=1)
         
         # Motion context projection layer
-        self.motion_projection = nn.Linear(self.embed_dim, hidden_dim)
+        self.motion_projection = nn.Linear(self.embed_dim, self.hidden_dim)
         
         # Use uniform channel sizes to reduce memory footprint
-        channels = [hidden_dim, hidden_dim // 2, hidden_dim // 2, hidden_dim // 2]
+        channels = [self.hidden_dim, self.hidden_dim // 2, self.hidden_dim // 2, self.hidden_dim // 2]
         self.decoder_stages = nn.ModuleList([
             MemoryEfficientUpsampling(channels[0], channels[1], scale_factor=2),
             MemoryEfficientUpsampling(channels[1], channels[2], scale_factor=2),

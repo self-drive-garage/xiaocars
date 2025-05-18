@@ -2,21 +2,22 @@
 
 # Model architecture parameters
 model:
-  img_size: 192           # Reduced from 224 to save memory
-  patch_size: 16          # Patch size for ViT
-  num_channels: 3         # RGB images
-  embed_dim: 512          # Reduced from 768 to save memory
-  num_heads: 8            # Reduced from 12 to save memory
-  num_layers: 8           # Reduced from 12 to save memory
-  mlp_ratio: 4            # Expansion ratio for MLP
-  dropout: 0.1            # Dropout probability
-  attn_dropout: 0.1       # Attention dropout probability
-  ego_motion_dim: 9       # 3(velocity) + 3(acceleration) + 3(angular_velocity)
+  img_size: 256
+  patch_size: 16  
+  num_channels: 3
+  embed_dim: 512
+  hidden_dim: 128
+  num_heads: 8
+  num_layers: 12
+  mlp_ratio: 4
+  dropout: 0.1
+  attn_dropout: 0.1
+  ego_motion_dim: 9
 
 # Dataset parameters
 dataset:
   seq_len: 3              # Number of frames used by the model for one sample
-  batch_size: 16           # Reduced from 8 to save memory
+  batch_size: 8           # Reduced from 8 to save memory
   num_workers: 8          # Number of worker processes for data loading
   random_sequence: true   # Enable random sequence sampling for training
   cache_images: false     # Whether to cache images in memory
@@ -54,7 +55,7 @@ training:
   
   # Training optimizations
   mixed_precision: true        # Keep mixed precision for memory efficiency
-  gradient_accumulation: 4     # Keep existing accumulation steps
+  gradient_accumulation: 8     # Keep existing accumulation steps
   gradient_clipping: 1.0       # Keep gradient clipping to prevent explosions
   
   # Additional parameters to consider
