@@ -34,9 +34,9 @@ dataset:
 
 training:
   # Learning rate and schedule parameters
-  lr: 3e-4                     # Increased from 1e-4 for faster convergence
+  lr: 5e-4                     # Increased from 1e-4 for faster convergence
   warmup_epochs: 5             # Reduced from 10 for more efficient training
-  min_lr: 1e-5                 # Increased from 1e-6 to prevent stalling
+  min_lr: 3e-5                 # Increased from 1e-6 to prevent stalling
   lr_schedule: "cosine"        # Confirm using cosine schedule
   
   # Optimizer parameters
@@ -58,13 +58,13 @@ training:
   gradient_clipping: 1.0       # Keep gradient clipping to prevent explosions
   
   # Additional parameters to consider
-  epochs: 100                  # Keep your planned 100 epochs
+  epochs: 300                  # Keep your planned 300 epochs
   amp_device: "cuda"           # Specify device for automatic mixed precision (to fix warnings)
 
 # Logging and saving parameters
 logging:
   log_interval: 10        # Logging interval in steps
-  save_interval: 1        # Checkpoint saving interval in epochs
+  save_interval: 5        # Checkpoint saving interval in epochs
   eval_interval: 5        # Evaluation interval in epochs
   visualize_every: 5      # Visualize predictions every N epochs
   num_viz_samples: 10     # Number of samples to visualize

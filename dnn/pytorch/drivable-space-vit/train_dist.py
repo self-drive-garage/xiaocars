@@ -30,6 +30,7 @@ from model.model import (
     load_model_from_checkpoint
 )
 from model.driving_dataset import DrivingDataset, create_dataloader
+from visualize import visualize_predictions
 
 # Setup logging
 logging.basicConfig(
@@ -174,83 +175,6 @@ def setup_environment(args):
     # Set random seed
     seed_everything(args.seed)
     return args
-
-
-def visualize_predictions(model, data_loader, device, output_dir, num_samples=10, rank=0):
-    """Visualize model predictions"""
-    # Importing visualization libraries here to avoid dependencies if not used
-    import matplotlib.pyplot as plt
-    from torchvision.utils import make_grid
-    
-    model.eval()
-    
-    # Only visualize on main process
-    if rank != 0:
-        return
-        
-    samples_visualized = 0
-    with torch.no_grad():
-        for batch in data_loader:
-            if samples_visualized >= num_samples:
-                break
-                
-            # Move batch to device
-            batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
-            
-            # Forward pass with task='all' to generate all outputs
-            outputs = model(batch, task='all')
-            
-            # Visualize each sample in the batch
-            for i in range(min(batch['left_images'].size(0), num_samples - samples_visualized)):
-                # Get current sample
-                left_img = batch['left_images'][i, -1]  # Last frame in sequence
-                right_img = batch['right_images'][i, -1]
-                
-                # Get reconstructions if available
-                left_recon = outputs.get('left_reconstructed', None)
-                right_recon = outputs.get('right_reconstructed', None)
-                
-                # Get drivable space prediction if available
-                drivable_space = outputs.get('drivable_space', None)
-                
-                # Create figure
-                fig, axes = plt.subplots(2, 3, figsize=(18, 12))
-                
-                # Plot original left and right images
-                axes[0, 0].imshow(left_img.permute(1, 2, 0).cpu().numpy())
-                axes[0, 0].set_title('Left Image')
-                axes[0, 0].axis('off')
-                
-                axes[0, 1].imshow(right_img.permute(1, 2, 0).cpu().numpy())
-                axes[0, 1].set_title('Right Image')
-                axes[0, 1].axis('off')
-                
-                # Plot reconstructions if available
-                if left_recon is not None:
-                    axes[1, 0].imshow(left_recon[i].permute(1, 2, 0).cpu().numpy())
-                    axes[1, 0].set_title('Left Reconstruction')
-                    axes[1, 0].axis('off')
-                
-                if right_recon is not None:
-                    axes[1, 1].imshow(right_recon[i].permute(1, 2, 0).cpu().numpy())
-                    axes[1, 1].set_title('Right Reconstruction')
-                    axes[1, 1].axis('off')
-                
-                # Plot drivable space prediction if available
-                if drivable_space is not None:
-                    drivable_map = drivable_space[i].squeeze().cpu().numpy()
-                    axes[0, 2].imshow(drivable_map, cmap='viridis')
-                    axes[0, 2].set_title('Drivable Space Prediction')
-                    axes[0, 2].axis('off')
-                
-                # Save figure
-                fig.tight_layout()
-                plt.savefig(output_dir / f'sample_{samples_visualized}.png')
-                plt.close(fig)
-                
-                samples_visualized += 1
-                if samples_visualized >= num_samples:
-                    break
 
 
 def train_one_epoch(model, loader, optimizer, loss_fn, device, epoch, config, scaler=None, rank=0):
