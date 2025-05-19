@@ -32,7 +32,7 @@ dataset:
       max_gap: 0.3
 
 training:
-  resume: "outputs/pytorch_fsdp/checkpoint_epoch_100.pth"
+  # resume: "outputs/pytorch_fsdp/checkpoint_epoch_100.pth"
   lr: 8e-4
   warmup_epochs: 15
   min_lr: 1e-5
@@ -49,13 +49,13 @@ training:
   future_weight: 1.0
   temporal_weight: 0.5
   
-  mixed_precision: true
+  mixed_precision: false
   gradient_accumulation: 4
   gradient_clipping: 1.0
   
   # Native PyTorch FSDP parameters
   fsdp_sharding_strategy: "FULL_SHARD"  # Equivalent to ZeRO-3
-  fsdp_cpu_offload: true
+  fsdp_cpu_offload: false
   fsdp_backward_prefetch: "BACKWARD_PRE"
   fsdp_use_orig_params: true
   fsdp_state_dict_type: "SHARDED_STATE_DICT"

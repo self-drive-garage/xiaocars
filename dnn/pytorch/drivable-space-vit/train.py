@@ -437,27 +437,27 @@ def create_fsdp_model(cfg):
     
     # 5. Configure sharding strategy based on zero_stage
     sharding_strategy = ShardingStrategy.FULL_SHARD  # Default to ZeRO-3 equivalent
-    if hasattr(cfg.training, 'zero_stage'):
-        if cfg.training.zero_stage == 1:
-            sharding_strategy = ShardingStrategy.SHARD_GRAD_OP
-        elif cfg.training.zero_stage == 2:
-            sharding_strategy = ShardingStrategy.SHARD_GRAD_OP
+    # if hasattr(cfg.training, 'zero_stage'):
+    #     if cfg.training.zero_stage == 1:
+    #         sharding_strategy = ShardingStrategy.SHARD_GRAD_OP
+    #     elif cfg.training.zero_stage == 2:
+    #         sharding_strategy = ShardingStrategy.SHARD_GRAD_OP
     # Use native FSDP config parameters if available
-    elif hasattr(cfg.training, 'fsdp_sharding_strategy'):
-        if cfg.training.fsdp_sharding_strategy == "SHARD_GRAD_OP":
-            sharding_strategy = ShardingStrategy.SHARD_GRAD_OP
-        elif cfg.training.fsdp_sharding_strategy == "FULL_SHARD":
-            sharding_strategy = ShardingStrategy.FULL_SHARD
-        elif cfg.training.fsdp_sharding_strategy == "NO_SHARD":
-            sharding_strategy = ShardingStrategy.NO_SHARD
+    # elif hasattr(cfg.training, 'fsdp_sharding_strategy'):
+        # if cfg.training.fsdp_sharding_strategy == "SHARD_GRAD_OP":
+        #     sharding_strategy = ShardingStrategy.SHARD_GRAD_OP
+        # elif cfg.training.fsdp_sharding_strategy == "FULL_SHARD":
+        #     sharding_strategy = ShardingStrategy.FULL_SHARD
+        # elif cfg.training.fsdp_sharding_strategy == "NO_SHARD":
+        #     sharding_strategy = ShardingStrategy.NO_SHARD
     
     # 6. Configure CPU offloading
     cpu_offload = None
-    if hasattr(cfg.training, 'zero_cpu_offload') and cfg.training.zero_cpu_offload:
-        cpu_offload = CPUOffload(offload_params=True)
-    # Use native FSDP config parameters if available
-    elif hasattr(cfg.training, 'fsdp_cpu_offload') and cfg.training.fsdp_cpu_offload:
-        cpu_offload = CPUOffload(offload_params=True)
+    # if hasattr(cfg.training, 'zero_cpu_offload') and cfg.training.zero_cpu_offload:
+    #     cpu_offload = CPUOffload(offload_params=True)
+    # # Use native FSDP config parameters if available
+    # elif hasattr(cfg.training, 'fsdp_cpu_offload') and cfg.training.fsdp_cpu_offload:
+    #     cpu_offload = CPUOffload(offload_params=True)
     
     # Configure backward prefetch
     backward_prefetch = BackwardPrefetch.BACKWARD_PRE  # Default
