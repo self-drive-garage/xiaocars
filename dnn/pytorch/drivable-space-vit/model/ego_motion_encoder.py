@@ -10,7 +10,7 @@ def get_default_config():
     }
 
 class EgoMotionEncoder(nn.Module):
-    """Enhanced encoder for ego motion data with explicit separation of components"""
+    """Enhanced encoder for ego motion data with explicit separation of components and early integration support"""
     def __init__(
         self,
         ego_motion_dim=None,
@@ -98,6 +98,13 @@ class EgoMotionEncoder(nn.Module):
             nn.Linear(self.embed_dim // 2, self.embed_dim),
             nn.Dropout(dropout_value),
         )
+        
+        # Conditioning module for early integration - NEW
+        self.conditioning_proj = nn.Sequential(
+            nn.Linear(self.embed_dim, self.embed_dim),
+            nn.GELU(),
+            nn.Dropout(dropout_value),
+        )
     
     def forward(self, x):
         # x shape: (batch_size, seq_len, ego_motion_dim)
@@ -143,6 +150,48 @@ class EgoMotionEncoder(nn.Module):
         else:
             # Fallback to legacy encoder
             return self.encoder(x)
+    
+    def encode_frame(self, x):
+        """
+        Process a single frame or batch of frames (without sequence dimension)
+        
+        Args:
+            x: Ego motion data with shape (batch_size, ego_motion_dim)
+            
+        Returns:
+            Encoded features with shape (batch_size, embed_dim)
+        """
+        # Add sequence dimension if not present
+        if len(x.shape) == 2:
+            x = x.unsqueeze(1)  # (B, 1, D)
+            
+        # Process with forward
+        features = self.forward(x)  # (B, 1, E)
+        
+        # Remove sequence dimension
+        return features.squeeze(1)  # (B, E)
+    
+    def get_conditioning_features(self, x):
+        """
+        Get features specifically processed for early conditioning
+        
+        Args:
+            x: Ego motion data with shape (batch_size, seq_len, ego_motion_dim)
+                or (batch_size, ego_motion_dim)
+                
+        Returns:
+            Conditioning features with same shape as input but last dim is embed_dim
+        """
+        # Process ego motion first
+        if len(x.shape) == 2:
+            # Single frame
+            features = self.encode_frame(x)  # (B, E)
+        else:
+            # Sequence
+            features = self.forward(x)  # (B, T, E)
+        
+        # Apply conditioning projection
+        return self.conditioning_proj(features)
 
 class MotionGuidedAttention(nn.Module):
     """Attention module that uses ego motion to guide visual attention"""
@@ -204,6 +253,25 @@ class MotionGuidedAttention(nn.Module):
         attn_weights = attn_weights.transpose(-2, -1)  # (B, T, N, 1)
         
         return attn_weights
+    
+    def apply_attention(self, visual_features, motion_features):
+        """
+        Apply motion-guided attention to visual features and return the attended features
+        
+        Args:
+            visual_features: (B, T, N, E) - visual features
+            motion_features: (B, T, E) - motion features
+            
+        Returns:
+            Attended features (B, T, N, E)
+        """
+        # Get attention weights
+        attn_weights = self.forward(visual_features, motion_features)  # (B, T, N, 1)
+        
+        # Apply attention with residual connection
+        attended_features = visual_features * attn_weights + visual_features
+        
+        return attended_features
 
 class MotionGuidedFramePredictor(nn.Module):
     """Predicts future frames based on current frame and ego motion"""

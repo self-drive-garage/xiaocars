@@ -17,6 +17,7 @@ def get_default_model_config():
         'dropout': 0.1,
         'attn_dropout': 0.1,
         'ego_motion_dim': 9,
+        'early_motion_integration': True,
     }
 
 def get_default_training_config():
@@ -43,11 +44,13 @@ def create_model(
     dropout=None,
     attn_dropout=None,
     ego_motion_dim=None,
+    early_motion_integration=None,
     config=None,
     **kwargs
 ):
     """
     Create and initialize the MultiViewTransformer model using either provided parameters or config
+    With support for early ego motion integration (Approach 1)
     """
     # Get model configuration
     model_config = get_default_model_config()
@@ -68,6 +71,19 @@ def create_model(
     attn_dropout = attn_dropout if attn_dropout is not None else model_config['attn_dropout']
     ego_motion_dim = ego_motion_dim if ego_motion_dim is not None else model_config['ego_motion_dim']
     
+    # Get early motion integration parameter
+    early_motion_integration = early_motion_integration if early_motion_integration is not None else model_config.get('early_motion_integration', True)
+    
+    # Update config with early motion integration setting for model initialization
+    if config is None:
+        config = {'model': model_config}
+    else:
+        config = config.copy()
+        if 'model' not in config:
+            config['model'] = {}
+        config['model']['early_motion_integration'] = early_motion_integration
+    
+    # Create model with updated config
     model = MultiViewTransformer(
         img_size=img_size,
         patch_size=patch_size,

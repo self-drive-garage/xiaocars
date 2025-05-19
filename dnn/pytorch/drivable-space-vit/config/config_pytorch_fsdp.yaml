@@ -1,0 +1,80 @@
+# Native PyTorch FSDP Configuration - Optimized for 16 GPUs with 16GB each
+
+model:
+  img_size: 384
+  patch_size: 16
+  num_channels: 3
+  embed_dim: 1536
+  hidden_dim: 384
+  num_heads: 24
+  num_layers: 36
+  mlp_ratio: 4
+  dropout: 0.1
+  attn_dropout: 0.1
+  ego_motion_dim: 9
+
+dataset:
+  seq_len: 8
+  batch_size: 2
+  num_workers: 4
+  random_sequence: true
+  cache_images: false
+  temporal:
+    stride: 1
+    overlap: 0
+    max_gap: 0.15
+    log_handling:
+      min_log_frames: 10
+      max_log_frames: 1000
+    validation:
+      stride: 5
+      max_gap: 0.12
+
+training:
+  lr: 8e-4
+  warmup_epochs: 15
+  min_lr: 1e-5
+  lr_schedule: "cosine"
+  
+  optimizer: "AdamW"
+  weight_decay: 1e-4
+  beta1: 0.9
+  beta2: 0.999
+  eps: 1e-8
+  
+  reconstruction_weight: 1.0
+  consistency_weight: 0.5
+  future_weight: 1.0
+  temporal_weight: 0.5
+  
+  mixed_precision: true
+  gradient_accumulation: 4
+  gradient_clipping: 1.0
+  
+  # Native PyTorch FSDP parameters
+  fsdp_sharding_strategy: "FULL_SHARD"  # Equivalent to ZeRO-3
+  fsdp_cpu_offload: true
+  fsdp_backward_prefetch: "BACKWARD_PRE"
+  fsdp_use_orig_params: true
+  fsdp_state_dict_type: "SHARDED_STATE_DICT"
+  
+  # Memory optimizations
+  activation_checkpointing: true
+  
+  epochs: 300
+  amp_device: "cuda"
+
+logging:
+  output_dir: "outputs/pytorch_fsdp"
+  log_interval: 10
+  save_interval: 5
+  eval_interval: 1
+  visualize_every: 5
+  num_viz_samples: 5
+  visualize_sequences: true
+  
+  profiling: 
+    enabled: true
+    start_step: 100
+    end_step: 110
+    output_dir: "profiles/pytorch_fsdp" 

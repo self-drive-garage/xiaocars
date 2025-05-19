@@ -94,7 +94,7 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
 
 class MultiViewTransformer(nn.Module):
     """
-    Main model for multi-view vision transformer with temporal modeling and ego motion integration
+    Main model for multi-view vision transformer with temporal modeling and early ego motion integration
     """
     def __init__(
         self,
@@ -140,6 +140,27 @@ class MultiViewTransformer(nn.Module):
             in_chans=in_chans,
             embed_dim=self.embed_dim,
             config=config,
+        )
+        
+        # Ego motion encoder - MOVED EARLIER in the model architecture
+        self.ego_motion_encoder = EgoMotionEncoder(
+            ego_motion_dim=ego_motion_dim,
+            embed_dim=self.embed_dim,
+            dropout=dropout_value,
+            config=config,
+        )
+        
+        # Motion-guided attention for each view
+        self.motion_attention = MotionGuidedAttention(
+            embed_dim=self.embed_dim,
+            num_heads=num_heads,
+        )
+        
+        # Early ego motion conditioning module - NEW
+        self.early_motion_conditioning = nn.Sequential(
+            nn.Linear(self.embed_dim, self.embed_dim),
+            nn.GELU(),
+            nn.Dropout(dropout_value),
         )
         
         # Position embeddings for spatial transformer
@@ -198,24 +219,14 @@ class MultiViewTransformer(nn.Module):
         # Temporal projection layer for combined CLS tokens
         self.temporal_projection = nn.Linear(3 * self.embed_dim, self.embed_dim)
         
-        # Ego motion encoder
-        self.ego_motion_encoder = EgoMotionEncoder(
-            ego_motion_dim=ego_motion_dim,
-            embed_dim=self.embed_dim,
-            dropout=dropout_value,
-            config=config,
+        # Image reconstruction decoder (simple MLP)
+        self.image_reconstruction_decoder = nn.Sequential(
+            nn.Linear(self.embed_dim, self.embed_dim),
+            nn.GELU(),
+            nn.Linear(self.embed_dim, self.patch_size * self.patch_size * in_chans),
         )
         
-        # Motion-guided attention for integrating ego motion with visual features
-        self.motion_attention = MotionGuidedAttention(
-            embed_dim=self.embed_dim,
-            num_heads=num_heads
-        )
-        
-        # Final LayerNorm
-        self.norm = nn.LayerNorm(self.embed_dim)
-        
-        # Decoder for drivable space segmentation
+        # Drivable space decoder
         self.drivable_space_decoder = DrivableSpaceDecoder(
             embed_dim=self.embed_dim,
             img_size=self.img_size,
@@ -224,24 +235,21 @@ class MultiViewTransformer(nn.Module):
             config=config,
         )
         
-        # Image reconstruction decoder (for self-supervised training)
-        self.image_reconstruction_decoder = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim // 2),
-            nn.GELU(),
-            nn.Dropout(dropout_value),
-            nn.Linear(self.embed_dim // 2, self.patch_size * self.patch_size * in_chans),
+        # Future prediction head
+        self.future_prediction_head = MotionGuidedFuturePredictor(
+            embed_dim=self.embed_dim,
+            ego_motion_dim=ego_motion_dim,
+            dropout=dropout_value,
+            config=config,
         )
         
-        # Enhanced future prediction with motion guidance
-        self.future_prediction_head = MotionGuidedFuturePredictor(
-            embed_dim=self.embed_dim * 3,  # 3x embed_dim for combined left/center/right CLS
-            ego_motion_dim=ego_motion_dim,
-            num_heads=num_heads,
-            dropout=dropout_value
-        )
+        # Layer normalization
+        self.norm = nn.LayerNorm(self.embed_dim)
         
         # Initialize weights
         self.apply(self._init_weights)
+        
+        # Initialize position embedding
         self.initialize_pos_embed()
     
     def _init_weights(self, m):
@@ -261,7 +269,8 @@ class MultiViewTransformer(nn.Module):
         )
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
     
-    def prepare_tokens(self, left_imgs, center_imgs, right_imgs):
+    def prepare_tokens_with_motion(self, left_imgs, center_imgs, right_imgs, ego_features=None):
+        """Prepare tokens for each view with early ego motion integration"""
         B = left_imgs.shape[0]
         
         # Extract patch embeddings for all three views
@@ -282,6 +291,17 @@ class MultiViewTransformer(nn.Module):
         left_patches = torch.cat([cls_left, left_patches], dim=1)  # (B, 1+N, E)
         center_patches = torch.cat([cls_center, center_patches], dim=1)  # (B, 1+N, E)
         right_patches = torch.cat([cls_right, right_patches], dim=1)  # (B, 1+N, E)
+        
+        # EARLY EGO MOTION INTEGRATION - condition patches with motion features
+        if ego_features is not None:
+            # Transform ego features for conditioning
+            motion_cond = self.early_motion_conditioning(ego_features)  # (B, E)
+            
+            # Add motion features to all patches including CLS token
+            motion_cond = motion_cond.unsqueeze(1)  # (B, 1, E)
+            left_patches = left_patches + motion_cond
+            center_patches = center_patches + motion_cond
+            right_patches = right_patches + motion_cond
         
         # Apply dropout
         left_patches = self.pos_drop(left_patches)
@@ -331,6 +351,12 @@ class MultiViewTransformer(nn.Module):
         # ego_motion shape: (B, T, ego_motion_dim)
         B, T, C, H, W = left_imgs.shape
         
+        # EARLY EGO MOTION PROCESSING (Approach 1)
+        ego_features_seq = None
+        if ego_motion is not None:
+            # Process ego motion for the entire sequence first
+            ego_features_seq = self.ego_motion_encoder(ego_motion)  # (B, T, E)
+        
         # Process each frame in the sequence
         left_features_seq = []
         center_features_seq = []
@@ -342,8 +368,15 @@ class MultiViewTransformer(nn.Module):
             center_frame = center_imgs[:, t]  # (B, C, H, W)
             right_frame = right_imgs[:, t]  # (B, C, H, W)
             
-            # Prepare tokens
-            left_patches, center_patches, right_patches = self.prepare_tokens(left_frame, center_frame, right_frame)
+            # Get ego features for this timestep
+            ego_features_t = None
+            if ego_features_seq is not None:
+                ego_features_t = ego_features_seq[:, t]  # (B, E)
+            
+            # Prepare tokens with early motion integration
+            left_patches, center_patches, right_patches = self.prepare_tokens_with_motion(
+                left_frame, center_frame, right_frame, ego_features_t
+            )
             
             # Spatial encoding
             left_spatial, center_spatial, right_spatial = self.spatial_encode(left_patches, center_patches, right_patches)
@@ -361,27 +394,18 @@ class MultiViewTransformer(nn.Module):
         center_features = torch.stack(center_features_seq, dim=1)  # (B, T, 1+N, E)
         right_features = torch.stack(right_features_seq, dim=1)  # (B, T, 1+N, E)
         
-        # Integrate ego motion if provided using our enhanced approach
-        if ego_motion is not None:
-            # Encode ego motion
-            ego_features = self.ego_motion_encoder(ego_motion)  # (B, T, E)
-            
-            # Use ego motion for motion-guided attention 
+        # ADDITIONAL EGO MOTION INTEGRATION for temporal processing
+        if ego_motion is not None and ego_features_seq is not None:
+            # Use ego motion for motion-guided attention on temporal features
             # Apply motion-guided attention to visual features
-            left_motion_attn = self.motion_attention(left_features, ego_features)  # (B, T, N, 1)
-            center_motion_attn = self.motion_attention(center_features, ego_features)  # (B, T, N, 1)
-            right_motion_attn = self.motion_attention(right_features, ego_features)  # (B, T, N, 1)
+            left_motion_attn = self.motion_attention(left_features, ego_features_seq)  # (B, T, N, 1)
+            center_motion_attn = self.motion_attention(center_features, ego_features_seq)  # (B, T, N, 1)
+            right_motion_attn = self.motion_attention(right_features, ego_features_seq)  # (B, T, N, 1)
             
             # Apply attention weights to features with residual connection
             left_features = left_features * left_motion_attn + left_features
             center_features = center_features * center_motion_attn + center_features
             right_features = right_features * right_motion_attn + right_features
-            
-            # Add ego motion features to CLS tokens for explicit integration
-            ego_features_cls = ego_features.unsqueeze(2)  # (B, T, 1, E)
-            left_features[:, :, 0:1, :] = left_features[:, :, 0:1, :] + ego_features_cls
-            center_features[:, :, 0:1, :] = center_features[:, :, 0:1, :] + ego_features_cls
-            right_features[:, :, 0:1, :] = right_features[:, :, 0:1, :] + ego_features_cls
         
         # Reshape for temporal transformer
         # Combine left, center, and right features for joint temporal processing
