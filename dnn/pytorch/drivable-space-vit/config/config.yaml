@@ -54,7 +54,7 @@ training:
   
   # Training optimizations
   mixed_precision: true        # Keep mixed precision for memory efficiency
-  gradient_accumulation: 8     # Keep gradient accumulation steps
+  gradient_accumulation: 6     # Changed from 8 to 6
   gradient_clipping: 1.0       # Keep gradient clipping
   
   # Add ZeRO optimization parameters
@@ -63,7 +63,7 @@ training:
   zero_param_offload: false    # No parameter offloading yet (enable if OOM)
   
   # Add pipeline parallelism parameters
-  pipe_chunks: 2               # Micro-batches per pipeline (keep low initially)
+  pipe_chunks: 3               # Micro-batches per pipeline (keep low initially)
   pipe_interleaved: true       # Use interleaved scheduling for better GPU utilization
   
   # Additional parameters
