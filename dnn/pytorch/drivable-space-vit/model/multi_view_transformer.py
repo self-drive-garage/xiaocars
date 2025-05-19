@@ -239,8 +239,9 @@ class MultiViewTransformer(nn.Module):
         self.future_prediction_head = MotionGuidedFuturePredictor(
             embed_dim=self.embed_dim,
             ego_motion_dim=ego_motion_dim,
-            dropout=dropout_value,
-            config=config,
+            dropout=dropout_value
+            # ,
+            # config=config,
         )
         
         # Layer normalization

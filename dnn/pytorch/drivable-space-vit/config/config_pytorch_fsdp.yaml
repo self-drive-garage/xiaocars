@@ -14,23 +14,25 @@ model:
   ego_motion_dim: 9
 
 dataset:
-  seq_len: 8
+  data_dir: "datasets/argoversev2"
+  seq_len: 3
   batch_size: 2
   num_workers: 4
-  random_sequence: true
+  random_sequence: false
   cache_images: false
   temporal:
     stride: 1
     overlap: 0
-    max_gap: 0.15
+    max_gap: 0.3
     log_handling:
       min_log_frames: 10
       max_log_frames: 1000
     validation:
       stride: 5
-      max_gap: 0.12
+      max_gap: 0.3
 
 training:
+  resume: "outputs/pytorch_fsdp/checkpoint_epoch_100.pth"
   lr: 8e-4
   warmup_epochs: 15
   min_lr: 1e-5
@@ -78,3 +80,6 @@ logging:
     start_step: 100
     end_step: 110
     output_dir: "profiles/pytorch_fsdp" 
+hydra:
+  job:
+    chdir: false

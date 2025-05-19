@@ -20,7 +20,7 @@ from torch.distributed.fsdp.wrap import (
     transformer_auto_wrap_policy,
     size_based_auto_wrap_policy,
 )
-from torch.utils.checkpoint import checkpoint_wrapper, activate_checkpoint_wrapper
+from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import checkpoint_wrapper
 
 from model.model import (
     create_model, 
@@ -37,7 +37,7 @@ from utils.train_utils import (
     seed_everything,
 )
 
-from utils.dist_args import parse_args
+
 from utils.validate import validate
 
 from model.driving_dataset import DrivingDataset, create_dataloader
@@ -60,17 +60,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-@hydra.main(config_path="config", config_name="config_fdsp")
+@hydra.main(config_path="config", config_name="config_pytorch_fsdp")
 def main(cfg: DictConfig):
     """Main training function using PyTorch FSDP with Hydra configuration"""
     # Parse distributed training arguments
-    args = parse_args()
     
     # Set seed for reproducibility
-    seed_everything(args.seed if hasattr(args, 'seed') else 42)
+    seed_everything(42)
     
     # Initialize distributed training
-    rank, local_rank, world_size = init_distributed_training(args)
+    rank, local_rank, world_size = init_distributed_training(cfg)
     
     # Setup output directories and logging
     output_dir = Path(cfg.logging.get('output_dir', 'outputs'))
@@ -85,34 +84,48 @@ def main(cfg: DictConfig):
     # Create datasets and dataloaders
     logger.info("Creating datasets and dataloaders...")
     train_dataset = DrivingDataset(
-        data_dir=cfg.dataset.get('data_dir', 'data'),
+        data_dir=cfg.dataset.get('data_dir', 'datasets/argoversev2'),
         split='train',
         seq_len=cfg.dataset.seq_len,
         img_size=cfg.model.img_size,
-        **cfg.dataset
+        random_sequence=cfg.dataset.get('random_sequence', False),
+        cache_images=cfg.dataset.get('cache_images', False)
     )
     val_dataset = DrivingDataset(
-        data_dir=cfg.dataset.get('data_dir', 'data'),
+        data_dir=cfg.dataset.get('data_dir', 'datasets/argoversev2'),
         split='val',
         seq_len=cfg.dataset.seq_len,
         img_size=cfg.model.img_size,
-        **cfg.dataset
+        random_sequence=cfg.dataset.get('random_sequence', False),
+        cache_images=cfg.dataset.get('cache_images', False)
     )
     
+    # Get distributed training info
+    is_distributed = world_size > 1
+
+    # Create dataloaders with distributed sampling
     train_loader = create_dataloader(
         train_dataset, 
         batch_size=cfg.dataset.batch_size,
         num_workers=cfg.dataset.num_workers,
+        is_distributed=is_distributed,
+        rank=rank,
+        world_size=world_size,
+        is_train=True
     )
-    
+
     val_loader = create_dataloader(
         val_dataset, 
         batch_size=cfg.dataset.batch_size,
         num_workers=cfg.dataset.num_workers,
+        is_distributed=is_distributed,
+        rank=rank,
+        world_size=world_size,
+        is_train=False
     )
     
      # Create standard model and wrap with FSDP
-    model = create_fsdp_model(cfg, args)
+    model = create_fsdp_model(cfg)
     
     # Create loss function, optimizer and scheduler
     loss_fn = create_loss_function(
@@ -139,58 +152,58 @@ def main(cfg: DictConfig):
     
     # Load checkpoint if resuming
     start_epoch = 0
-    if args.resume:
-        checkpoint_path = args.resume
-        if os.path.exists(checkpoint_path):
-            map_location = {'cuda:%d' % 0: 'cuda:%d' % local_rank}
+    # if cfg.resume:
+    #     checkpoint_path = cfg.resume
+    #     if os.path.exists(checkpoint_path):
+    #         map_location = {'cuda:%d' % 0: 'cuda:%d' % local_rank}
             
-            # Determine the state dict type based on config
-            fsdp_state_dict_type = "SHARDED_STATE_DICT"  # Default for FSDP
-            if hasattr(cfg.training, 'fsdp_state_dict_type'):
-                fsdp_state_dict_type = cfg.training.fsdp_state_dict_type
+    #         # Determine the state dict type based on config
+    #         fsdp_state_dict_type = "SHARDED_STATE_DICT"  # Default for FSDP
+    #         if hasattr(cfg.training, 'fsdp_state_dict_type'):
+    #             fsdp_state_dict_type = cfg.training.fsdp_state_dict_type
             
-            # Load checkpoint - different handling for FSDP sharded state dict
-            if isinstance(model, FSDP) and fsdp_state_dict_type == "SHARDED_STATE_DICT":
-                logger.info(f"Loading FSDP sharded checkpoint from {checkpoint_path}")
-                from torch.distributed.fsdp import FullStateDictConfig, StateDictType
-                from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel as FSDP
+    #         # Load checkpoint - different handling for FSDP sharded state dict
+    #         if isinstance(model, FSDP) and fsdp_state_dict_type == "SHARDED_STATE_DICT":
+    #             logger.info(f"Loading FSDP sharded checkpoint from {checkpoint_path}")
+    #             from torch.distributed.fsdp import FullStateDictConfig, StateDictType
+    #             from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel as FSDP
                 
-                # Load metadata
-                metadata = torch.load(os.path.join(os.path.dirname(checkpoint_path), "metadata.pt"), 
-                                     map_location=map_location)
-                start_epoch = metadata.get('epoch', 0) + 1
+    #             # Load metadata
+    #             metadata = torch.load(os.path.join(os.path.dirname(checkpoint_path), "metadata.pt"), 
+    #                                  map_location=map_location)
+    #             start_epoch = metadata.get('epoch', 0) + 1
                 
-                # Set up FSDP state dict configuration
-                with FSDP.state_dict_type(model, StateDictType.SHARDED_STATE_DICT):
-                    checkpoint = torch.load(checkpoint_path, map_location=map_location)
-                    model.load_state_dict(checkpoint['model_state_dict'])
+    #             # Set up FSDP state dict configuration
+    #             with FSDP.state_dict_type(model, StateDictType.SHARDED_STATE_DICT):
+    #                 checkpoint = torch.load(checkpoint_path, map_location=map_location)
+    #                 model.load_state_dict(checkpoint['model_state_dict'])
                 
-                # Load optimizer and scheduler states if required
-                if 'optimizer_checkpoint' in metadata and os.path.exists(metadata['optimizer_checkpoint']):
-                    optimizer_state = torch.load(metadata['optimizer_checkpoint'], map_location=map_location)
-                    optimizer.load_state_dict(optimizer_state)
+    #             # Load optimizer and scheduler states if required
+    #             if 'optimizer_checkpoint' in metadata and os.path.exists(metadata['optimizer_checkpoint']):
+    #                 optimizer_state = torch.load(metadata['optimizer_checkpoint'], map_location=map_location)
+    #                 optimizer.load_state_dict(optimizer_state)
                 
-                if scheduler and 'scheduler_checkpoint' in metadata and os.path.exists(metadata['scheduler_checkpoint']):
-                    scheduler_state = torch.load(metadata['scheduler_checkpoint'], map_location=map_location)
-                    scheduler.load_state_dict(scheduler_state)
-            else:
-                # Regular checkpoint loading
-                checkpoint = torch.load(checkpoint_path, map_location=map_location)
-                start_epoch = checkpoint.get('epoch', 0) + 1
+    #             if scheduler and 'scheduler_checkpoint' in metadata and os.path.exists(metadata['scheduler_checkpoint']):
+    #                 scheduler_state = torch.load(metadata['scheduler_checkpoint'], map_location=map_location)
+    #                 scheduler.load_state_dict(scheduler_state)
+    #         else:
+    #             # Regular checkpoint loading
+    #             checkpoint = torch.load(checkpoint_path, map_location=map_location)
+    #             start_epoch = checkpoint.get('epoch', 0) + 1
                 
-                # Load model weights
-                if isinstance(model, FSDP):
-                    # Use FSDP load_state_dict with strict=False to handle sharded state dict
-                    model.load_state_dict(checkpoint['model_state_dict'], strict=False)
-                else:
-                    model.load_state_dict(checkpoint['model_state_dict'])
+    #             # Load model weights
+    #             if isinstance(model, FSDP):
+    #                 # Use FSDP load_state_dict with strict=False to handle sharded state dict
+    #                 model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+    #             else:
+    #                 model.load_state_dict(checkpoint['model_state_dict'])
                 
-                # Load optimizer and scheduler states
-                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-                if scheduler and 'scheduler_state_dict' in checkpoint:
-                    scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+    #             # Load optimizer and scheduler states
+    #             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    #             if scheduler and 'scheduler_state_dict' in checkpoint:
+    #                 scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
             
-            logger.info(f"Resumed from checkpoint {checkpoint_path} at epoch {start_epoch}")
+    #         logger.info(f"Resumed from checkpoint {checkpoint_path} at epoch {start_epoch}")
     
     # Training loop
     best_val_loss = float('inf')
@@ -207,7 +220,6 @@ def main(cfg: DictConfig):
             loss_fn=loss_fn,
             epoch=epoch,
             cfg=cfg,
-            args=args,
             writer=writer,
             rank=rank,
             world_size=world_size
@@ -319,10 +331,10 @@ def main(cfg: DictConfig):
     logger.info("Training completed!")
     return model
 
-def init_distributed_training(args):
+def init_distributed_training(cfg):
     """Initialize distributed training and return rank information"""
     # Set CUDA device
-    local_rank = args.local_rank if hasattr(args, 'local_rank') else int(os.environ.get("LOCAL_RANK", 0))
+    local_rank = int(os.environ.get("LOCAL_RANK", 0)) 
     torch.cuda.set_device(local_rank)
     
     # Initialize process group if not already initialized
@@ -336,7 +348,7 @@ def init_distributed_training(args):
     logger.info(f"Initialized process group: rank {rank} of {world_size}")
     return rank, local_rank, world_size
 
-def create_fsdp_model(cfg, args):
+def create_fsdp_model(cfg):
     """Create model and wrap with FSDP based on configuration"""
     # Create base model
     base_model = create_model(
@@ -379,9 +391,12 @@ def create_fsdp_model(cfg, args):
     MIN_PARAMS_SIZE = 100000  # Wrap modules with >100K parameters
     
     # Create a combined policy that first checks for specific layer types, then falls back to size-based
-    def combined_auto_wrap_policy(module, recurse, unwrapped_params, 
-                                min_params=MIN_PARAMS_SIZE):
+    def combined_auto_wrap_policy(module, recurse, unwrapped_params=None, nonwrapped_numel=None, 
+                                 min_params=MIN_PARAMS_SIZE, **kwargs):
         """Custom policy combining transformer layers and size-based policies"""
+        # Use whichever parameter is provided
+        param_size = unwrapped_params if unwrapped_params is not None else nonwrapped_numel
+        
         transformer_policy = functools.partial(
             transformer_auto_wrap_policy,
             transformer_layer_cls=transformer_layer_classes
@@ -393,11 +408,11 @@ def create_fsdp_model(cfg, args):
         )
         
         # First try the transformer-based policy
-        if transformer_policy(module, recurse, unwrapped_params):
+        if transformer_policy(module, recurse, param_size):
             return True
         
         # If that doesn't match, try the size-based policy
-        return size_policy(module, recurse, unwrapped_params)
+        return size_policy(module, recurse, param_size)
     
     # Use the combined policy
     auto_wrap_policy = combined_auto_wrap_policy
@@ -488,7 +503,7 @@ def apply_activation_checkpointing(model, transformer_layer_classes):
     
     logger.info("Applied activation checkpointing to transformer layers")
 
-def train_epoch(model, train_loader, optimizer, loss_fn, epoch, cfg, args, writer, rank, world_size):
+def train_epoch(model, train_loader, optimizer, loss_fn, epoch, cfg, writer, rank, world_size):
     """Train for one epoch"""
     model.train()
     

@@ -30,14 +30,14 @@ def get_default_config():
             'temporal': {
                 'stride': 1,           # Number of frames to skip between sequences
                 'overlap': 0,          # Number of overlapping frames between sequences
-                'max_gap': 0.1,        # Maximum allowed time gap between consecutive frames (in seconds)
+                'max_gap': 0.3,        # Maximum allowed time gap between consecutive frames (in seconds)
                 'log_handling': {
                     'min_log_frames': 10,  # Minimum frames required in a log
                     'max_log_frames': 1000  # Maximum frames to use from a log
                 },
                 'validation': {
                     'stride': 5,       # Larger stride for validation
-                    'max_gap': 0.05    # Stricter gap requirement for validation
+                    'max_gap': 0.3    # Stricter gap requirement for validation
                 }
             }
         }
@@ -81,7 +81,7 @@ class DrivingDataset(Dataset):
         # Get temporal parameters
         temporal_config = dataset_config.get('temporal', default_config['dataset']['temporal'])
         self.temporal_stride = temporal_config.get('stride', 1)
-        self.max_gap = temporal_config.get('max_gap', 0.1)
+        self.max_gap = temporal_config.get('max_gap', 0.3)
         self.min_log_frames = temporal_config.get('log_handling', {}).get('min_log_frames', 10)
         self.max_log_frames = temporal_config.get('log_handling', {}).get('max_log_frames', 1000)
         
@@ -155,7 +155,7 @@ class DrivingDataset(Dataset):
                         logger.warning(f"Non-monotonic timestamps in log {log_id} at index {i}")
                         continue
                     if time_diff > self.max_gap:
-                        logger.warning(f"Large time gap in log {log_id} at index {i}: {time_diff:.3f}s (expected ~0.1s for 10Hz)")
+                        # logger.warning(f"Large time gap in log {log_id} at index {i}: {time_diff:.3f}s (expected ~0.1s for 10Hz)")
                         continue
                 
                 valid_frames.append({
@@ -322,16 +322,42 @@ class DrivingDataset(Dataset):
         
         return total_size / (1024 * 1024)  # Convert to MB
 
-def create_dataloader(dataset, batch_size=None, num_workers=None):
-    """Create data loader with safer defaults for distributed training"""
-        
-    # Print dataloader configuration for debugging
+def create_dataloader(dataset, batch_size=None, num_workers=None, is_distributed=False, rank=0, world_size=1, is_train=False):
+    """Create data loader with distributed sampling support
+    
+    Args:
+        dataset: The dataset to load data from
+        batch_size: Batch size per GPU
+        num_workers: Number of worker processes for loading
+        is_distributed: Whether running in distributed mode
+        rank: Process rank in distributed training
+        world_size: Total number of processes in distributed training
+        is_train: Whether this is a training dataset
+    """
+    from torch.utils.data.distributed import DistributedSampler
+    
+    # Create sampler for distributed training
+    if is_distributed:
+        sampler = DistributedSampler(
+            dataset,
+            num_replicas=world_size,
+            rank=rank,
+            shuffle=is_train,  # Shuffle only for training
+            drop_last=True
+        )
+        shuffle = False  # When using DistributedSampler, DataLoader shuffle must be False
+    else:
+        sampler = None
+        shuffle = is_train  # Shuffle only for training if not distributed
+    
+    # Create and return DataLoader
     return DataLoader(
         dataset,
         batch_size=batch_size,
-        num_workers=num_workers,  # Use 0 workers for debugging
-        shuffle=False,
-        drop_last=True,  # Keep drop_last=True for consistent batch sizes
-        persistent_workers=False,  # Disable persistent workers
-        timeout=60  # Add timeout to detect worker hangs
+        num_workers=num_workers,
+        sampler=sampler,
+        shuffle=shuffle if sampler is None else False,  # Only shuffle if no sampler
+        drop_last=True,
+        persistent_workers=(num_workers > 0),
+        timeout=60
     )
