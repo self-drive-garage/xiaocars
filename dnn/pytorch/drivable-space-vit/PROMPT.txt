@@ -1,0 +1,5 @@
+please look at all the model files in @model.py and @model .  you have access to all the files in the repo.
+
+please note this is a complex model, and we should only make one change at a time to understand the impact our change is going to have so that we can find the right solution.
+
+please recommend a fix and explain the consequence of this fix on the entire model.  please study all model files carefully

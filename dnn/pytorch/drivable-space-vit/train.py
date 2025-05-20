@@ -96,7 +96,9 @@ def main(cfg: DictConfig):
         seq_len=cfg.dataset.seq_len,
         img_size=cfg.model.img_size,
         random_sequence=cfg.dataset.get('random_sequence', False),
-        cache_images=cfg.dataset.get('cache_images', False)
+        cache_images=cfg.dataset.get('cache_images', False),
+        rank=rank,
+        world_size=world_size
     )
     val_dataset = DrivingDataset(
         data_dir=cfg.dataset.get('data_dir', 'datasets/argoversev2'),
@@ -104,7 +106,9 @@ def main(cfg: DictConfig):
         seq_len=cfg.dataset.seq_len,
         img_size=cfg.model.img_size,
         random_sequence=cfg.dataset.get('random_sequence', False),
-        cache_images=cfg.dataset.get('cache_images', False)
+        cache_images=cfg.dataset.get('cache_images', False),
+        rank=rank,
+        world_size=world_size
     )
     
     # Get distributed training info

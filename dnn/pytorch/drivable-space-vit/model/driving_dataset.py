@@ -56,9 +56,13 @@ class DrivingDataset(Dataset):
         cache_images=None,
         config=None,
         debug: bool = False,
+        rank: int = 0,
+        world_size: int = 1,
     ):
         self.data_dir = Path(data_dir)
         self.split = split
+        self.rank = rank
+        self.world_size = world_size
         
         # Get default configuration
         default_config = get_default_config()
@@ -135,6 +139,21 @@ class DrivingDataset(Dataset):
             self.metadata = self.metadata[self.metadata['log_id'].isin(selected_log_ids)]
             logger.info(f"Debug mode: Using {len(selected_log_ids)} log IDs: {selected_log_ids}")
         
+        # Shard data for distributed training - Only process a subset of logs assigned to this rank
+        unique_log_ids = self.metadata['log_id'].unique()
+        
+        # Deterministic allocation of logs to different ranks
+        if self.world_size > 1:
+            # Get log IDs assigned to this rank
+            assigned_log_ids = []
+            for i, log_id in enumerate(unique_log_ids):
+                if i % self.world_size == self.rank:
+                    assigned_log_ids.append(log_id)
+            
+            # Only keep metadata for assigned logs
+            self.metadata = self.metadata[self.metadata['log_id'].isin(assigned_log_ids)]
+            logger.info(f"Rank {self.rank}/{self.world_size}: Assigned {len(assigned_log_ids)} logs out of {len(unique_log_ids)}")
+        
         # Group by log_id first
         self.log_sequences = {}
         
@@ -190,9 +209,9 @@ class DrivingDataset(Dataset):
             for i in range(0, len(frames) - self.seq_len + 1, self.temporal_stride):
                 self.sequences.append(frames[i:i + self.seq_len])
         
-        logger.info(f"Loaded {len(self.log_sequences)} logs")
-        logger.info(f"Created {len(self.sequences)} valid sequences")
-        logger.info(f"Average sequence length: {np.mean([len(s) for s in self.sequences]):.2f} frames")
+        logger.info(f"Rank {self.rank}/{self.world_size}: Loaded {len(self.log_sequences)} logs")
+        logger.info(f"Rank {self.rank}/{self.world_size}: Created {len(self.sequences)} valid sequences")
+        logger.info(f"Rank {self.rank}/{self.world_size}: Average sequence length: {np.mean([len(s) for s in self.sequences]):.2f} frames")
         
         # In __init__ method, after loading all log sequences
         ego_motion_data = []
@@ -207,10 +226,34 @@ class DrivingDataset(Dataset):
                 ego_motion_data.append(ego_motion_values)
         
         # Calculate mean and std for normalization
-        self.ego_motion_mean = torch.tensor(np.mean(ego_motion_data, axis=0), dtype=torch.float32)
-        self.ego_motion_std = torch.tensor(np.std(ego_motion_data, axis=0), dtype=torch.float32)
-        # Avoid division by zero
-        self.ego_motion_std = torch.where(self.ego_motion_std == 0, torch.ones_like(self.ego_motion_std), self.ego_motion_std)
+        if len(ego_motion_data) > 0:
+            self.ego_motion_mean = torch.tensor(np.mean(ego_motion_data, axis=0), dtype=torch.float32)
+            self.ego_motion_std = torch.tensor(np.std(ego_motion_data, axis=0), dtype=torch.float32)
+            # Avoid division by zero
+            self.ego_motion_std = torch.where(self.ego_motion_std == 0, torch.ones_like(self.ego_motion_std), self.ego_motion_std)
+        else:
+            # Fallback if no data (shouldn't happen normally)
+            self.ego_motion_mean = torch.zeros(9, dtype=torch.float32)
+            self.ego_motion_std = torch.ones(9, dtype=torch.float32)
+            logger.warning(f">>>>>>>> Rank {self.rank}: No ego motion data available, using default normalization values")
+            
+        # Synchronize ego_motion_mean and ego_motion_std across ranks if needed
+        if self.world_size > 1 and torch.distributed.is_initialized():
+            # Create local tensors with correct dimensions
+            local_mean = self.ego_motion_mean.clone().to('cuda')
+            local_std = self.ego_motion_std.clone().to('cuda')
+            local_count = torch.tensor([len(ego_motion_data)], dtype=torch.float32).to('cuda')
+            
+            # All-reduce to get global sum and count
+            torch.distributed.all_reduce(local_mean, op=torch.distributed.ReduceOp.SUM)
+            torch.distributed.all_reduce(local_std, op=torch.distributed.ReduceOp.SUM)
+            torch.distributed.all_reduce(local_count, op=torch.distributed.ReduceOp.SUM)
+            
+            # Compute global mean and std
+            if local_count.item() > 0:
+                self.ego_motion_mean = (local_mean / local_count.item()).cpu()
+                self.ego_motion_std = (local_std / local_count.item()).cpu()
+                self.ego_motion_std = torch.where(self.ego_motion_std == 0, torch.ones_like(self.ego_motion_std), self.ego_motion_std)
     
     def __len__(self):
         return len(self.sequences)
@@ -336,6 +379,12 @@ def create_dataloader(dataset, batch_size=None, num_workers=None, is_distributed
     """
     from torch.utils.data.distributed import DistributedSampler
     
+    # Ensure minimum batch size for multi-head attention stability in distributed mode
+    min_batch_size = 4  # Minimum batch size needed for stable multi-head attention
+    if is_distributed and batch_size < min_batch_size:
+        logger.warning(f"Rank {rank}: Increasing batch size from {batch_size} to {min_batch_size} for multi-head attention stability")
+        batch_size = min_batch_size
+    
     # Create sampler for distributed training
     if is_distributed:
         sampler = DistributedSampler(
@@ -345,10 +394,18 @@ def create_dataloader(dataset, batch_size=None, num_workers=None, is_distributed
             shuffle=is_train,  # Shuffle only for training
             drop_last=True
         )
+        logger.info(f"Rank {rank}/{world_size}: Created DistributedSampler with {len(dataset)} samples")
         shuffle = False  # When using DistributedSampler, DataLoader shuffle must be False
     else:
         sampler = None
         shuffle = is_train  # Shuffle only for training if not distributed
+        logger.info(f"Created regular DataLoader with {len(dataset)} samples")
+    
+    # Log distribution info
+    if is_distributed:
+        logger.info(f"Rank {rank}/{world_size}: Batch size per GPU: {batch_size}, Total batch size: {batch_size * world_size}")
+    else:
+        logger.info(f"Batch size: {batch_size}")
     
     # Create and return DataLoader
     return DataLoader(

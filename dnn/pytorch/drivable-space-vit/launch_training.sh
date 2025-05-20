@@ -12,7 +12,7 @@ export HYDRA_FULL_ERROR=1
 
 # Run training with nohup to keep it running after SSH session ends
 echo "Starting training in background. Log will be written to: ${LOG_FILE}"
-nohup env HYDRA_FULL_ERROR=1 torchrun --nproc_per_node=16 train.py > ${LOG_FILE} 2>&1 &
+nohup env HYDRA_FULL_ERROR=1 torchrun --nproc_per_node=4 train.py > ${LOG_FILE} 2>&1 &
 
 # Save the process ID to allow killing it later if needed
 echo $! > ${LOG_DIR}/training_${TIMESTAMP}.pid
