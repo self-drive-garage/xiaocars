@@ -1,22 +1,32 @@
 # Native PyTorch FSDP Configuration - Optimized for 16 GPUs with 16GB each
 
 model:
+  # Basic parameters
   img_size: 256
   patch_size: 16
-  num_channels: 3
+  in_chans: 3
   embed_dim: 768
-  hidden_dim: 768
   num_heads: 12
-  num_layers: 12
   mlp_ratio: 4
   dropout: 0.1
   attn_dropout: 0.1
   ego_motion_dim: 9
+  
+  # Modular architecture parameters
+  spatial_layers: 4
+  cross_view_layers: 4
+  temporal_layers: 4
+  
+  # Backwards compatibility
+  num_channels: 3
+  num_layers: 12
+  use_transformer_layers: true
+  use_modular_architecture: true
 
 dataset:
   data_dir: "datasets/argoversev2"
   seq_len: 3
-  batch_size: 1
+  batch_size: 2
   num_workers: 4
   random_sequence: false
   cache_images: false
@@ -49,8 +59,8 @@ training:
   future_weight: 1.0
   temporal_weight: 0.5
   
-  mixed_precision: false
-  gradient_accumulation: 4
+  mixed_precision: true
+  gradient_accumulation: 8
   gradient_clipping: 1.0
   
   # Native PyTorch FSDP parameters
@@ -61,7 +71,7 @@ training:
   fsdp_state_dict_type: "SHARDED_STATE_DICT"
   
   # Memory optimizations
-  activation_checkpointing: false
+  activation_checkpointing: true
   
   epochs: 300
   amp_device: "cuda"

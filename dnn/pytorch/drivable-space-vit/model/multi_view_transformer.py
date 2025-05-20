@@ -14,6 +14,109 @@ from .ego_motion_encoder import EgoMotionEncoder, MotionGuidedAttention
 from .drivable_space_decoder import DrivableSpaceDecoder
 from .future_predictor import MotionGuidedFuturePredictor
 
+# New FSDP-friendly transformer block classes
+
+class SpatialTransformerBlock(nn.Module):
+    """Block containing spatial transformer layers for FSDP wrapping"""
+    def __init__(
+        self,
+        embed_dim,
+        num_heads,
+        num_layers,
+        mlp_ratio=4,
+        dropout=0.1,
+        attn_dropout=0.1,
+        config=None,
+    ):
+        super().__init__()
+        self.layers = nn.ModuleList([
+            TransformerEncoderLayer(
+                dim=embed_dim,
+                num_heads=num_heads,
+                mlp_ratio=mlp_ratio,
+                dropout=dropout,
+                attn_dropout=attn_dropout,
+                config=config,
+            )
+            for _ in range(num_layers)
+        ])
+    
+    def forward(self, x):
+        for layer in self.layers:
+            x = layer(x)
+        return x
+
+
+class CrossViewTransformerBlock(nn.Module):
+    """Block containing cross-view transformer layers for FSDP wrapping"""
+    def __init__(
+        self,
+        embed_dim,
+        num_heads,
+        num_layers,
+        mlp_ratio=4,
+        dropout=0.1,
+        attn_dropout=0.1,
+        config=None,
+    ):
+        super().__init__()
+        self.layers = nn.ModuleList([
+            CrossViewTransformerLayer(
+                dim=embed_dim,
+                num_heads=num_heads,
+                mlp_ratio=mlp_ratio,
+                dropout=dropout,
+                attn_dropout=attn_dropout,
+                config=config,
+            )
+            for _ in range(num_layers)
+        ])
+    
+    def forward(self, left_features, center_features, right_features):
+        left_fused, center_fused, right_fused = left_features, center_features, right_features
+        
+        for layer in self.layers:
+            # Fuse left and center views
+            left_fused, center_fused = layer(left_fused, center_fused)
+            # Fuse center and right views
+            center_fused, right_fused = layer(center_fused, right_fused)
+            # Fuse right and left views to complete the cycle
+            right_fused, left_fused = layer(right_fused, left_fused)
+        
+        return left_fused, center_fused, right_fused
+
+
+class TemporalTransformerBlock(nn.Module):
+    """Block containing temporal transformer layers for FSDP wrapping"""
+    def __init__(
+        self,
+        embed_dim,
+        num_heads,
+        num_layers,
+        mlp_ratio=4,
+        dropout=0.1,
+        attn_dropout=0.1,
+        config=None,
+    ):
+        super().__init__()
+        self.layers = nn.ModuleList([
+            TemporalTransformerLayer(
+                dim=embed_dim,
+                num_heads=num_heads,
+                mlp_ratio=mlp_ratio,
+                dropout=dropout,
+                attn_dropout=attn_dropout,
+                config=config,
+            )
+            for _ in range(num_layers)
+        ])
+    
+    def forward(self, x):
+        for layer in self.layers:
+            x = layer(x)
+        return x
+
+
 def get_default_model_config():
     """Return default model configuration"""
     return {
@@ -132,6 +235,9 @@ class MultiViewTransformer(nn.Module):
         attn_dropout_value = attn_dropout if attn_dropout is not None else model_config['attn_dropout']
         ego_motion_dim = ego_motion_dim if ego_motion_dim is not None else model_config['ego_motion_dim']
         
+        # Check if we should use transformer layers
+        self.use_transformer_layers = model_config.get('use_transformer_layers', True)
+        
         self.num_patches = (self.img_size // self.patch_size) ** 2
         
         # Patch embedding for all three views
@@ -178,44 +284,45 @@ class MultiViewTransformer(nn.Module):
         # Dropout after pos embed
         self.pos_drop = nn.Dropout(dropout_value)
         
-        # Spatial transformer layers for each view independently
-        self.spatial_transformer_layers = nn.ModuleList([
-            TransformerEncoderLayer(
-                dim=self.embed_dim,
+        # Only create transformer blocks if enabled
+        if self.use_transformer_layers:
+            # Create transformer blocks for FSDP-friendly wrapping
+            spatial_layers = depth // 3  # Use 1/3 of layers for spatial processing
+            cross_view_layers = depth // 3  # Use 1/3 of layers for cross-view fusion
+            temporal_layers = depth // 3  # Use 1/3 of layers for temporal modeling
+            
+            # Spatial transformer block for each view
+            self.spatial_transformer_block = SpatialTransformerBlock(
+                embed_dim=self.embed_dim,
                 num_heads=num_heads,
+                num_layers=spatial_layers,
                 mlp_ratio=mlp_ratio,
                 dropout=dropout_value,
                 attn_dropout=attn_dropout_value,
                 config=config,
             )
-            for _ in range(depth // 3)  # Use 1/3 of layers for spatial processing
-        ])
-        
-        # Cross-view transformer layers for multi-view fusion
-        self.cross_view_transformer_layers = nn.ModuleList([
-            CrossViewTransformerLayer(
-                dim=self.embed_dim,
+            
+            # Cross-view transformer block
+            self.cross_view_transformer_block = CrossViewTransformerBlock(
+                embed_dim=self.embed_dim,
                 num_heads=num_heads,
+                num_layers=cross_view_layers,
                 mlp_ratio=mlp_ratio,
                 dropout=dropout_value,
                 attn_dropout=attn_dropout_value,
                 config=config,
             )
-            for _ in range(depth // 3)  # Use 1/3 of layers for cross-view fusion
-        ])
-        
-        # Temporal transformer layers
-        self.temporal_transformer_layers = nn.ModuleList([
-            TemporalTransformerLayer(
-                dim=self.embed_dim,
+            
+            # Temporal transformer block
+            self.temporal_transformer_block = TemporalTransformerBlock(
+                embed_dim=self.embed_dim,
                 num_heads=num_heads,
+                num_layers=temporal_layers,
                 mlp_ratio=mlp_ratio,
                 dropout=dropout_value,
                 attn_dropout=attn_dropout_value,
                 config=config,
             )
-            for _ in range(depth // 3)  # Use 1/3 of layers for temporal modeling
-        ])
         
         # Temporal projection layer for combined CLS tokens
         self.temporal_projection = nn.Linear(3 * self.embed_dim, self.embed_dim)
@@ -313,62 +420,37 @@ class MultiViewTransformer(nn.Module):
         return left_patches, center_patches, right_patches
     
     def spatial_encode(self, left_patches, center_patches, right_patches):
-        # Comment out the original implementation that uses transformer layers
-        '''
-        # Apply spatial transformer layers to each view independently
-        for layer in self.spatial_transformer_layers:
-            left_patches = layer(left_patches)
-            center_patches = layer(center_patches)
-            right_patches = layer(right_patches)
-        '''
+        # Apply transformer layers if enabled
+        if self.use_transformer_layers:
+            # Process each view independently with the same spatial transformer block
+            left_patches = self.spatial_transformer_block(left_patches)
+            center_patches = self.spatial_transformer_block(center_patches)
+            right_patches = self.spatial_transformer_block(right_patches)
         
-        # Simplified implementation - just return the inputs unchanged
-        # This bypasses the transformer layers where the error occurs
-        logging.info("Using simplified spatial_encode function (bypassing transformer layers)")
+        # If transformer layers aren't enabled, just pass through
         return left_patches, center_patches, right_patches
     
     def cross_view_fusion(self, left_patches, center_patches, right_patches):
-        # Comment out the original implementation that uses transformer layers
-        '''
-        # Apply cross-view transformer layers for multi-view fusion
-        # Process pairs of views and then combine
-        for layer in self.cross_view_transformer_layers:
-            # Fuse left and center views
-            left_fused, center_fused = layer(left_patches, center_patches)
-            # Fuse center and right views
-            center_fused, right_fused = layer(center_fused, right_patches)
-            # Fuse right and left views to complete the cycle
-            right_fused, left_fused = layer(right_fused, left_fused)
-            
-            left_patches, center_patches, right_patches = left_fused, center_fused, right_fused
-        '''
+        # Apply transformer layers if enabled
+        if self.use_transformer_layers:
+            # Apply cross-view transformer block
+            left_patches, center_patches, right_patches = self.cross_view_transformer_block(
+                left_patches, center_patches, right_patches
+            )
         
-        # Simplified implementation - just return the inputs unchanged
-        # This bypasses the transformer layers where the error occurs
-        logging.info("Using simplified cross_view_fusion function (bypassing transformer layers)")
+        # If transformer layers aren't enabled, just pass through
         return left_patches, center_patches, right_patches
     
     def temporal_encode(self, features):
-        # Comment out the original implementation that uses transformer layers
-        '''
-        # Check if features have triple width (combined left/center/right CLS tokens)
-        if features.shape[-1] == 3 * self.embed_dim:
-            # Project from 3*embed_dim to embed_dim
-            features = self.temporal_projection(features)
-        
-        # Apply temporal transformer layers
-        for layer in self.temporal_transformer_layers:
-            features = layer(features)
-        '''
-        
-        # Simplified implementation - just project if needed but skip transformer layers
-        # This bypasses the problematic MultiheadAttention modules
-        logging.info("Using simplified temporal_encode function (bypassing transformer layers)")
-        
-        # Still perform the projection but skip the transformer layers
+        # Project if needed
         if features.shape[-1] == 3 * self.embed_dim:
             features = self.temporal_projection(features)
-            
+        
+        # Apply transformer layers if enabled
+        if self.use_transformer_layers:
+            # Apply temporal transformer block
+            features = self.temporal_transformer_block(features)
+        
         return features
     
     def forward_features(self, left_imgs, center_imgs, right_imgs, ego_motion=None):

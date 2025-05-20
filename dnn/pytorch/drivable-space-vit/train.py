@@ -30,6 +30,15 @@ from model.model import (
     save_model_checkpoint
 )
 
+# Import modular model architecture
+from model.modular_model import create_modular_model
+from model.modular_vision_transformer import (
+    ModularVisionTransformer,
+    SpatialTransformerModule,
+    CrossViewTransformerModule,
+    TemporalTransformerModule
+)
+
 from utils.train_utils import (
     seed_everything,
 )
@@ -44,6 +53,8 @@ from visualize import visualize_predictions
 from model.transformer_encoder_layer import TransformerEncoderLayer
 from model.cross_view_transformer_layer import CrossViewTransformerLayer
 from model.temporal_transfomer_layer import TemporalTransformerLayer
+# Import new transformer block classes
+from model.multi_view_transformer import SpatialTransformerBlock, CrossViewTransformerBlock, TemporalTransformerBlock
 # Add imports for additional components
 from model.patch_embed import PatchEmbed
 from model.ego_motion_encoder import EgoMotionEncoder, MotionGuidedAttention
@@ -62,6 +73,7 @@ os.environ["TORCH_NCCL_TRACE_BUFFER_SIZE"] = "8388608"  # 8MB for debug traces
 os.environ["NCCL_SOCKET_IFNAME"] = "^lo,docker"  # Avoid loopback and docker interfaces
 os.environ["NCCL_IB_DISABLE"] = "1"  # Disable InfiniBand transport
 os.environ["NCCL_P2P_DISABLE"] = "1"  # Disable P2P transfers that might cause issues
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,garbage_collection_threshold:0.8,roundup_power2_divisions:[1024:4,>:8]"  # Advanced memory optimization
 
 
 @hydra.main(config_path="config", config_name="config_pytorch_fsdp")
@@ -236,13 +248,12 @@ def main(cfg: DictConfig):
         # Validate
         val_loss = validate(
             model=model,
-            val_loader=val_loader,
+            loader=val_loader,
             loss_fn=loss_fn,
+            device=f"cuda:{local_rank}",
             epoch=epoch,
-            cfg=cfg,
-            writer=writer,
-            rank=rank,
-            world_size=world_size
+            config=OmegaConf.to_container(cfg, resolve=True),
+            rank=rank
         )
         
         # Step learning rate scheduler
@@ -358,36 +369,105 @@ def init_distributed_training(cfg):
 
 def create_fsdp_model(cfg):
     """Create model and wrap with FSDP based on configuration"""
-    # Create base model
-    base_model = create_model(
-        img_size=cfg.model.img_size,
-        patch_size=cfg.model.patch_size,
-        in_chans=cfg.model.num_channels,
-        embed_dim=cfg.model.embed_dim,
-        depth=cfg.model.num_layers,
-        num_heads=cfg.model.num_heads,
-        mlp_ratio=cfg.model.mlp_ratio,
-        dropout=cfg.model.dropout,
-        attn_dropout=cfg.model.attn_dropout,
-        ego_motion_dim=cfg.model.ego_motion_dim,
-        config=OmegaConf.to_container(cfg, resolve=True)
-    )
+    # Check if we should use the modular architecture
+    use_modular_architecture = cfg.model.get('use_modular_architecture', True)
+    
+    # Create base model using either the original or modular architecture
+    if use_modular_architecture:
+        base_model = create_modular_model(
+            img_size=cfg.model.img_size,
+            patch_size=cfg.model.patch_size,
+            in_chans=cfg.model.in_chans,
+            embed_dim=cfg.model.embed_dim,
+            spatial_layers=cfg.model.spatial_layers,
+            cross_view_layers=cfg.model.cross_view_layers,
+            temporal_layers=cfg.model.temporal_layers,
+            num_heads=cfg.model.num_heads,
+            mlp_ratio=cfg.model.mlp_ratio,
+            dropout=cfg.model.dropout,
+            attn_dropout=cfg.model.attn_dropout,
+            ego_motion_dim=cfg.model.ego_motion_dim,
+            config=OmegaConf.to_container(cfg, resolve=True)
+        )
+    else:
+        base_model = create_model(
+            img_size=cfg.model.img_size,
+            patch_size=cfg.model.patch_size,
+            in_chans=cfg.model.num_channels,
+            embed_dim=cfg.model.embed_dim,
+            depth=cfg.model.num_layers,
+            num_heads=cfg.model.num_heads,
+            mlp_ratio=cfg.model.mlp_ratio,
+            dropout=cfg.model.dropout,
+            attn_dropout=cfg.model.attn_dropout,
+            ego_motion_dim=cfg.model.ego_motion_dim,
+            config=OmegaConf.to_container(cfg, resolve=True)
+        )
+    
+    # Log model structure before FSDP wrapping
+    if dist.get_rank() == 0:
+        logger.info("Model structure before FSDP wrapping:")
+        total_params = sum(p.numel() for p in base_model.parameters())
+        
+        # Build module parameter information
+        module_info = []
+        for name, module in base_model.named_children():
+            params = sum(p.numel() for p in module.parameters())
+            percentage = params/total_params*100
+            module_info.append(f"Module {name}: {params:,} parameters ({percentage:.2f}%)")
+        
+        # Log the parameter counts instead of raising an error
+        logger.info(f"Total parameters: {total_params:,}")
+        for info in module_info:
+            logger.info(info)
     
     # Configure FSDP options
     
     # 1. Determine transformer layers for auto wrapping policy
-    transformer_layer_classes = {
-         # Add important model components for proper sharding
-        PatchEmbed,  # Image patch embedding (convolutional)
-        EgoMotionEncoder,  # Ego motion processing
-        TransformerEncoderLayer,
-        CrossViewTransformerLayer,
-        TemporalTransformerLayer,
-        MotionGuidedAttention,  # Motion-guided attention
-        DrivableSpaceDecoder,  # Decoder for drivable space
-        MotionGuidedFuturePredictor,  # Future prediction component
-        torch.nn.MultiheadAttention,  # Add native MultiheadAttention for FSDP wrapping
-    }
+    if use_modular_architecture:
+        # For modular architecture, wrap the main transformer modules
+        transformer_layer_classes = {
+            # Main transformer modules
+            SpatialTransformerModule,
+            CrossViewTransformerModule, 
+            TemporalTransformerModule,
+            
+            # Auxiliary modules
+            PatchEmbed,
+            EgoMotionEncoder,
+            MotionGuidedAttention,
+            DrivableSpaceDecoder,
+            MotionGuidedFuturePredictor,
+            
+            # PyTorch built-ins
+            torch.nn.MultiheadAttention,
+            torch.nn.Linear,
+            torch.nn.Sequential,
+        }
+    else:
+        # For original architecture, use the previously defined classes
+        transformer_layer_classes = {
+             # Add important model components for proper sharding
+            PatchEmbed,  # Image patch embedding (convolutional)
+            EgoMotionEncoder,  # Ego motion processing
+            
+            # New transformer block classes - higher priority for FSDP wrapping
+            SpatialTransformerBlock,  # Blocks of transformer layers
+            CrossViewTransformerBlock,
+            TemporalTransformerBlock,
+            
+            # Individual transformer layers - lower priority 
+            TransformerEncoderLayer,
+            CrossViewTransformerLayer,
+            TemporalTransformerLayer,
+            
+            MotionGuidedAttention,  # Motion-guided attention
+            DrivableSpaceDecoder,  # Decoder for drivable space
+            MotionGuidedFuturePredictor,  # Future prediction component
+            torch.nn.MultiheadAttention,  # Add native MultiheadAttention for FSDP wrapping
+            torch.nn.Linear,  # Also wrap large linear layers
+            torch.nn.Sequential,  # Wrap sequential containers
+        }
     
     # 2. Create auto wrapping policy
     auto_wrap_policy = functools.partial(
@@ -396,8 +476,8 @@ def create_fsdp_model(cfg):
     )
     
     # 3. Add a size-based policy as a fallback for any large modules not explicitly listed
-    # Modules with more than 100K parameters will also be wrapped
-    MIN_PARAMS_SIZE = 100000  # Wrap modules with >100K parameters
+    # Modules with more than 10K parameters will also be wrapped
+    MIN_PARAMS_SIZE = 1000  # Reduced to 1K to be even more aggressive with wrapping
     
     # Create a combined policy that first checks for specific layer types, then falls back to size-based
     def combined_auto_wrap_policy(module, recurse, unwrapped_params=None, nonwrapped_numel=None, 
@@ -446,26 +526,17 @@ def create_fsdp_model(cfg):
     
     # 5. Configure sharding strategy based on zero_stage
     sharding_strategy = ShardingStrategy.FULL_SHARD  # Default to ZeRO-3 equivalent
-    # if hasattr(cfg.training, 'zero_stage'):
-    #     if cfg.training.zero_stage == 1:
+    # if hasattr(cfg.training, 'fsdp_sharding_strategy'):
+    #     if cfg.training.fsdp_sharding_strategy == "SHARD_GRAD_OP":
     #         sharding_strategy = ShardingStrategy.SHARD_GRAD_OP
-    #     elif cfg.training.zero_stage == 2:
-    #         sharding_strategy = ShardingStrategy.SHARD_GRAD_OP
-    # Use native FSDP config parameters if available
-    # elif hasattr(cfg.training, 'fsdp_sharding_strategy'):
-        # if cfg.training.fsdp_sharding_strategy == "SHARD_GRAD_OP":
-        #     sharding_strategy = ShardingStrategy.SHARD_GRAD_OP
-        # elif cfg.training.fsdp_sharding_strategy == "FULL_SHARD":
-        #     sharding_strategy = ShardingStrategy.FULL_SHARD
-        # elif cfg.training.fsdp_sharding_strategy == "NO_SHARD":
-        #     sharding_strategy = ShardingStrategy.NO_SHARD
+    #     elif cfg.training.fsdp_sharding_strategy == "FULL_SHARD":
+    #         sharding_strategy = ShardingStrategy.FULL_SHARD
+    #     elif cfg.training.fsdp_sharding_strategy == "NO_SHARD":
+    #         sharding_strategy = ShardingStrategy.NO_SHARD
     
     # 6. Configure CPU offloading
     cpu_offload = None
-    # if hasattr(cfg.training, 'zero_cpu_offload') and cfg.training.zero_cpu_offload:
-    #     cpu_offload = CPUOffload(offload_params=True)
-    # # Use native FSDP config parameters if available
-    # elif hasattr(cfg.training, 'fsdp_cpu_offload') and cfg.training.fsdp_cpu_offload:
+    # if hasattr(cfg.training, 'fsdp_cpu_offload') and cfg.training.fsdp_cpu_offload:
     #     cpu_offload = CPUOffload(offload_params=True)
     
     # Configure backward prefetch
@@ -481,16 +552,47 @@ def create_fsdp_model(cfg):
     if hasattr(cfg.training, 'fsdp_use_orig_params'):
         use_orig_params = cfg.training.fsdp_use_orig_params
     
-    # Wrap model with FSDP
+    # Create FSDP config
+    fsdp_config = {
+        'auto_wrap_policy': auto_wrap_policy,
+        'sharding_strategy': sharding_strategy,
+        'cpu_offload': cpu_offload,
+        'backward_prefetch': backward_prefetch,
+        'mixed_precision': mixed_precision_config,
+        'device_id': torch.cuda.current_device(),
+        'use_orig_params': use_orig_params,
+        'limit_all_gathers': True,
+    }
+    
+    # Explicitly wrap the heavyweight transformer modules first
+    # This ensures they are properly sharded across GPUs
+    """
+    if hasattr(base_model, 'spatial_transformer_layers'):
+        base_model.spatial_transformer_layers = FSDP(
+            base_model.spatial_transformer_layers, 
+            **fsdp_config
+        )
+        logger.info("Explicitly wrapped spatial_transformer_layers with FSDP")
+    
+    if hasattr(base_model, 'cross_view_transformer_layers'):
+        base_model.cross_view_transformer_layers = FSDP(
+            base_model.cross_view_transformer_layers, 
+            **fsdp_config
+        )
+        logger.info("Explicitly wrapped cross_view_transformer_layers with FSDP")
+    
+    if hasattr(base_model, 'temporal_transformer_layers'):
+        base_model.temporal_transformer_layers = FSDP(
+            base_model.temporal_transformer_layers, 
+            **fsdp_config
+        )
+        logger.info("Explicitly wrapped temporal_transformer_layers with FSDP")
+    """
+    
+    # Now wrap the entire model with FSDP
     fsdp_model = FSDP(
         base_model,
-        auto_wrap_policy=auto_wrap_policy,
-        sharding_strategy=sharding_strategy,
-        cpu_offload=cpu_offload,
-        backward_prefetch=backward_prefetch,
-        mixed_precision=mixed_precision_config,
-        device_id=torch.cuda.current_device(),
-        use_orig_params=use_orig_params,
+        **fsdp_config
     )
     
     # Apply activation checkpointing if needed
@@ -538,9 +640,16 @@ def train_epoch(model, train_loader, optimizer, loss_fn, epoch, cfg, writer, ran
         # Forward pass
         outputs = model(batch)
         
-        # Calculate loss
-        loss = loss_fn(outputs, batch)
-        loss_value = loss.item()
+        # Calculate loss - SelfSupervisedLoss returns (loss_tensor, loss_dict)
+        loss_output = loss_fn(outputs, batch)
+        
+        # Handle both tuple output (loss, loss_dict) and direct tensor output
+        if isinstance(loss_output, tuple):
+            loss, loss_dict = loss_output
+            loss_value = loss_dict.get('total_loss', 0.0)
+        else:
+            loss = loss_output
+            loss_value = loss.item()
         
         # Scale loss for gradient accumulation
         loss = loss / grad_accum_steps
