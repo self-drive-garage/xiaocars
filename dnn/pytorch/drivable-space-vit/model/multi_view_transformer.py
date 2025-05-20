@@ -312,52 +312,13 @@ class MultiViewTransformer(nn.Module):
         return left_patches, center_patches, right_patches
     
     def spatial_encode(self, left_patches, center_patches, right_patches):
-        # Add debugging code to log tensor shapes
-        if hasattr(torch.distributed, 'get_rank') and torch.distributed.is_initialized():
-            rank = torch.distributed.get_rank()
-            if rank == 0:  # Only print from rank 0 to avoid flooding logs
-                print(f"DEBUG: Input tensor shapes before spatial encoding - left: {left_patches.shape}, center: {center_patches.shape}, right: {right_patches.shape}")
-                # Check tensor properties to help diagnose FSDP issues
-                for name, tensor in [("left", left_patches), ("center", center_patches), ("right", right_patches)]:
-                    print(f"DEBUG: {name} tensor - dim: {tensor.dim()}, dtype: {tensor.dtype}, device: {tensor.device}, requires_grad: {tensor.requires_grad}")
-        
-        # Ensure that tensors have correct dimensionality for attention processing
-        for tensor_name, tensor in [("left_patches", left_patches), ("center_patches", center_patches), ("right_patches", right_patches)]:
-            if tensor.dim() < 3 and tensor.numel() > 0:
-                if tensor.dim() == 2 and tensor.size(1) == self.embed_dim:
-                    # Case where we have [batch_size, embed_dim] but need [batch_size, seq_len, embed_dim]
-                    if tensor_name == "left_patches":
-                        left_patches = tensor.unsqueeze(1)
-                    elif tensor_name == "center_patches":
-                        center_patches = tensor.unsqueeze(1)
-                    elif tensor_name == "right_patches":
-                        right_patches = tensor.unsqueeze(1)
-        
         # Apply spatial transformer layers to each view independently
-        left_patches_output = left_patches
-        center_patches_output = center_patches
-        right_patches_output = right_patches
+        for layer in self.spatial_transformer_layers:
+            left_patches = layer(left_patches)
+            center_patches = layer(center_patches)
+            right_patches = layer(right_patches)
         
-        for i, layer in enumerate(self.spatial_transformer_layers):
-            try:
-                left_patches_output = layer(left_patches_output)
-                center_patches_output = layer(center_patches_output)
-                right_patches_output = layer(right_patches_output)
-            except RuntimeError as e:
-                if "mat2 must be a matrix" in str(e):
-                    # Log error info and shapes for debugging
-                    if hasattr(torch.distributed, 'get_rank') and torch.distributed.is_initialized():
-                        rank = torch.distributed.get_rank()
-                        if rank == 0:
-                            print(f"DEBUG: Error in spatial_encode at layer {i}: {str(e)}")
-                            print(f"DEBUG: Tensor shapes - left: {left_patches_output.shape}, center: {center_patches_output.shape}, right: {right_patches_output.shape}")
-                    # Re-raise to see full traceback
-                    raise
-                else:
-                    # Re-raise other errors
-                    raise
-        
-        return left_patches_output, center_patches_output, right_patches_output
+        return left_patches, center_patches, right_patches
     
     def cross_view_fusion(self, left_patches, center_patches, right_patches):
         # Apply cross-view transformer layers for multi-view fusion
