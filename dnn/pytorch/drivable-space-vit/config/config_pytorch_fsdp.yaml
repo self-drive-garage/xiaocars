@@ -1,13 +1,13 @@
 # Native PyTorch FSDP Configuration - Optimized for 16 GPUs with 16GB each
 
 model:
-  img_size: 384
+  img_size: 256
   patch_size: 16
   num_channels: 3
-  embed_dim: 1536
-  hidden_dim: 384
-  num_heads: 24
-  num_layers: 36
+  embed_dim: 768
+  hidden_dim: 768
+  num_heads: 12
+  num_layers: 12
   mlp_ratio: 4
   dropout: 0.1
   attn_dropout: 0.1
@@ -16,7 +16,7 @@ model:
 dataset:
   data_dir: "datasets/argoversev2"
   seq_len: 3
-  batch_size: 2
+  batch_size: 1
   num_workers: 4
   random_sequence: false
   cache_images: false

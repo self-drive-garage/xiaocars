@@ -30,9 +30,6 @@ from model.model import (
     save_model_checkpoint
 )
 
-from model.pipeline_model import create_pipeline_model
-from model.pipeline_processors import ComprehensiveInputProcessor, OutputProcessor
-
 from utils.train_utils import (
     seed_everything,
 )
@@ -388,7 +385,8 @@ def create_fsdp_model(cfg):
         TemporalTransformerLayer,
         MotionGuidedAttention,  # Motion-guided attention
         DrivableSpaceDecoder,  # Decoder for drivable space
-        MotionGuidedFuturePredictor  # Future prediction component
+        MotionGuidedFuturePredictor,  # Future prediction component
+        torch.nn.MultiheadAttention,  # Add native MultiheadAttention for FSDP wrapping
     }
     
     # 2. Create auto wrapping policy

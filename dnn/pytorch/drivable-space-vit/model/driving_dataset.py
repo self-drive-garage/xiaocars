@@ -379,11 +379,8 @@ def create_dataloader(dataset, batch_size=None, num_workers=None, is_distributed
     """
     from torch.utils.data.distributed import DistributedSampler
     
-    # Ensure minimum batch size for multi-head attention stability in distributed mode
-    min_batch_size = 4  # Minimum batch size needed for stable multi-head attention
-    if is_distributed and batch_size < min_batch_size:
-        logger.warning(f"Rank {rank}: Increasing batch size from {batch_size} to {min_batch_size} for multi-head attention stability")
-        batch_size = min_batch_size
+    # Removed the hardcoded minimum batch size to respect config
+    # Let's respect the batch size from the config file
     
     # Create sampler for distributed training
     if is_distributed:
