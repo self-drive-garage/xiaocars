@@ -61,7 +61,7 @@ training:
   fsdp_state_dict_type: "SHARDED_STATE_DICT"
   
   # Memory optimizations
-  activation_checkpointing: true
+  activation_checkpointing: false
   
   epochs: 300
   amp_device: "cuda"

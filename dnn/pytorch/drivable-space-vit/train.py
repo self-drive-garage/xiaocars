@@ -60,6 +60,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+os.environ["NCCL_DEBUG"] = "INFO"
+os.environ["TORCH_NCCL_TRACE_BUFFER_SIZE"] = "8388608"  # 8MB for debug traces
+os.environ["NCCL_SOCKET_IFNAME"] = "^lo,docker"  # Avoid loopback and docker interfaces
+os.environ["NCCL_IB_DISABLE"] = "1"  # Disable InfiniBand transport
+os.environ["NCCL_P2P_DISABLE"] = "1"  # Disable P2P transfers that might cause issues
+
+
 @hydra.main(config_path="config", config_name="config_pytorch_fsdp")
 def main(cfg: DictConfig):
     """Main training function using PyTorch FSDP with Hydra configuration"""
