@@ -22,16 +22,14 @@ from torch.distributed.fsdp.wrap import (
 )
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import checkpoint_wrapper
 
-from model.model import (
-    create_model, 
+from model.modular_model import (
+    create_modular_model, 
     create_loss_function, 
     create_optimizer,
     create_scheduler,
     save_model_checkpoint
 )
 
-# Import modular model architecture
-from model.modular_model import create_modular_model
 from model.modular_vision_transformer import (
     ModularVisionTransformer,
     SpatialTransformerModule,
@@ -43,19 +41,12 @@ from utils.train_utils import (
     seed_everything,
 )
 
-
 from utils.validate import validate
 
 from model.driving_dataset import DrivingDataset, create_dataloader
 from visualize import visualize_predictions
 
-# Import transformer layer classes for wrapping policy
-from model.transformer_encoder_layer import TransformerEncoderLayer
-from model.cross_view_transformer_layer import CrossViewTransformerLayer
-from model.temporal_transfomer_layer import TemporalTransformerLayer
-# Import new transformer block classes
-from model.multi_view_transformer import SpatialTransformerBlock, CrossViewTransformerBlock, TemporalTransformerBlock
-# Add imports for additional components
+# Import transformer layer classes for wrapping policy - only needed components for modular architecture
 from model.patch_embed import PatchEmbed
 from model.ego_motion_encoder import EgoMotionEncoder, MotionGuidedAttention
 from model.drivable_space_decoder import DrivableSpaceDecoder
@@ -369,40 +360,26 @@ def init_distributed_training(cfg):
 
 def create_fsdp_model(cfg):
     """Create model and wrap with FSDP based on configuration"""
-    # Check if we should use the modular architecture
-    use_modular_architecture = cfg.model.get('use_modular_architecture', True)
+    # Note: The config may still have legacy parameters like 'num_channels', 'num_layers',
+    # 'use_transformer_layers', and 'use_modular_architecture', but these are ignored
+    # as we're now using only the modular architecture.
     
-    # Create base model using either the original or modular architecture
-    if use_modular_architecture:
-        base_model = create_modular_model(
-            img_size=cfg.model.img_size,
-            patch_size=cfg.model.patch_size,
-            in_chans=cfg.model.in_chans,
-            embed_dim=cfg.model.embed_dim,
-            spatial_layers=cfg.model.spatial_layers,
-            cross_view_layers=cfg.model.cross_view_layers,
-            temporal_layers=cfg.model.temporal_layers,
-            num_heads=cfg.model.num_heads,
-            mlp_ratio=cfg.model.mlp_ratio,
-            dropout=cfg.model.dropout,
-            attn_dropout=cfg.model.attn_dropout,
-            ego_motion_dim=cfg.model.ego_motion_dim,
-            config=OmegaConf.to_container(cfg, resolve=True)
-        )
-    else:
-        base_model = create_model(
-            img_size=cfg.model.img_size,
-            patch_size=cfg.model.patch_size,
-            in_chans=cfg.model.num_channels,
-            embed_dim=cfg.model.embed_dim,
-            depth=cfg.model.num_layers,
-            num_heads=cfg.model.num_heads,
-            mlp_ratio=cfg.model.mlp_ratio,
-            dropout=cfg.model.dropout,
-            attn_dropout=cfg.model.attn_dropout,
-            ego_motion_dim=cfg.model.ego_motion_dim,
-            config=OmegaConf.to_container(cfg, resolve=True)
-        )
+    # Create modular model
+    base_model = create_modular_model(
+        img_size=cfg.model.img_size,
+        patch_size=cfg.model.patch_size,
+        in_chans=cfg.model.in_chans,
+        embed_dim=cfg.model.embed_dim,
+        spatial_layers=cfg.model.spatial_layers,
+        cross_view_layers=cfg.model.cross_view_layers,
+        temporal_layers=cfg.model.temporal_layers,
+        num_heads=cfg.model.num_heads,
+        mlp_ratio=cfg.model.mlp_ratio,
+        dropout=cfg.model.dropout,
+        attn_dropout=cfg.model.attn_dropout,
+        ego_motion_dim=cfg.model.ego_motion_dim,
+        config=OmegaConf.to_container(cfg, resolve=True)
+    )
     
     # Log model structure before FSDP wrapping
     if dist.get_rank() == 0:
@@ -424,50 +401,24 @@ def create_fsdp_model(cfg):
     # Configure FSDP options
     
     # 1. Determine transformer layers for auto wrapping policy
-    if use_modular_architecture:
-        # For modular architecture, wrap the main transformer modules
-        transformer_layer_classes = {
-            # Main transformer modules
-            SpatialTransformerModule,
-            CrossViewTransformerModule, 
-            TemporalTransformerModule,
-            
-            # Auxiliary modules
-            PatchEmbed,
-            EgoMotionEncoder,
-            MotionGuidedAttention,
-            DrivableSpaceDecoder,
-            MotionGuidedFuturePredictor,
-            
-            # PyTorch built-ins
-            torch.nn.MultiheadAttention,
-            torch.nn.Linear,
-            torch.nn.Sequential,
-        }
-    else:
-        # For original architecture, use the previously defined classes
-        transformer_layer_classes = {
-             # Add important model components for proper sharding
-            PatchEmbed,  # Image patch embedding (convolutional)
-            EgoMotionEncoder,  # Ego motion processing
-            
-            # New transformer block classes - higher priority for FSDP wrapping
-            SpatialTransformerBlock,  # Blocks of transformer layers
-            CrossViewTransformerBlock,
-            TemporalTransformerBlock,
-            
-            # Individual transformer layers - lower priority 
-            TransformerEncoderLayer,
-            CrossViewTransformerLayer,
-            TemporalTransformerLayer,
-            
-            MotionGuidedAttention,  # Motion-guided attention
-            DrivableSpaceDecoder,  # Decoder for drivable space
-            MotionGuidedFuturePredictor,  # Future prediction component
-            torch.nn.MultiheadAttention,  # Add native MultiheadAttention for FSDP wrapping
-            torch.nn.Linear,  # Also wrap large linear layers
-            torch.nn.Sequential,  # Wrap sequential containers
-        }
+    transformer_layer_classes = {
+        # Main transformer modules
+        SpatialTransformerModule,
+        CrossViewTransformerModule, 
+        TemporalTransformerModule,
+        
+        # Auxiliary modules
+        PatchEmbed,
+        EgoMotionEncoder,
+        MotionGuidedAttention,
+        DrivableSpaceDecoder,
+        MotionGuidedFuturePredictor,
+        
+        # PyTorch built-ins
+        torch.nn.MultiheadAttention,
+        torch.nn.Linear,
+        torch.nn.Sequential,
+    }
     
     # 2. Create auto wrapping policy
     auto_wrap_policy = functools.partial(
@@ -511,6 +462,7 @@ def create_fsdp_model(cfg):
     if cfg.training.mixed_precision:
         if torch.cuda.is_bf16_supported():
             # Use BFloat16 if supported (preferred for stability with transformers)
+            logger.info("Using BFloat16 mixed precision for better stability")
             mixed_precision_config = MixedPrecision(
                 param_dtype=torch.bfloat16,
                 reduce_dtype=torch.bfloat16,
@@ -518,11 +470,15 @@ def create_fsdp_model(cfg):
             )
         else:
             # Fall back to FP16
+            logger.info("BFloat16 not supported, falling back to FP16 mixed precision")
             mixed_precision_config = MixedPrecision(
                 param_dtype=torch.float16,
                 reduce_dtype=torch.float16,
                 buffer_dtype=torch.float16
             )
+    else:
+        # Log that we're using full precision
+        logger.info("Using full precision (FP32)")
     
     # 5. Configure sharding strategy based on zero_stage
     sharding_strategy = ShardingStrategy.FULL_SHARD  # Default to ZeRO-3 equivalent

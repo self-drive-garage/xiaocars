@@ -16,12 +16,6 @@ model:
   spatial_layers: 4
   cross_view_layers: 4
   temporal_layers: 4
-  
-  # Backwards compatibility
-  num_channels: 3
-  num_layers: 12
-  use_transformer_layers: true
-  use_modular_architecture: true
 
 dataset:
   data_dir: "datasets/argoversev2"
@@ -59,7 +53,7 @@ training:
   future_weight: 1.0
   temporal_weight: 0.5
   
-  mixed_precision: true
+  mixed_precision: false
   gradient_accumulation: 8
   gradient_clipping: 1.0
   
