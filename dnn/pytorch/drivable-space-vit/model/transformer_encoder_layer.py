@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from utils.train_utils import debug_attention_forward
 
 def get_default_config():
     """Return default configuration parameters for TransformerEncoderLayer"""
@@ -27,8 +28,15 @@ class TransformerEncoderLayer(nn.Module):
         
         # Use provided config if available
         model_config = {}
-        if config is not None and 'model' in config:
-            model_config = config['model']
+        training_config = {}
+        if config is not None:
+            if 'model' in config:
+                model_config = config['model']
+            if 'training' in config:
+                training_config = config['training']
+        
+        # Store debug flag
+        self.debug_mode = training_config.get('debug', False)
         
         # Use provided parameters if given, otherwise use config, fallback to defaults
         self.dim = dim
@@ -63,7 +71,16 @@ class TransformerEncoderLayer(nn.Module):
         # Self-attention with residual connection
         residual = x
         x = self.norm1(x)
-        x, _ = self.attn(x, x, x, attn_mask=attn_mask, need_weights=False)
+        
+        # Use debug attention forward function if debug mode is enabled, otherwise use standard forward
+        if self.debug_mode:
+            # Use the utility function for debugging
+            attn_out, _ = debug_attention_forward(self.attn, x, attn_mask=attn_mask, need_weights=False)
+            x = attn_out
+        else:
+            # Standard forward pass
+            x, _ = self.attn(x, x, x, attn_mask=attn_mask, need_weights=False)
+        
         x = residual + x
         
         # MLP with residual connection

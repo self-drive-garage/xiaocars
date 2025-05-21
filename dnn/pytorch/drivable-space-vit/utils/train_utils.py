@@ -145,3 +145,105 @@ def generate_deepspeed_config(args, config, dataset_size):
     }
     
     return ds_config
+
+def inspect_multihead_attention_modules(model, logger=None):
+    """
+    Inspect all MultiheadAttention modules in a model and log their details.
+    This is useful for debugging and ensuring correct module shape before FSDP wrapping.
+    
+    Args:
+        model: The PyTorch model to inspect
+        logger: Optional logger to use for output (uses print if None)
+    
+    Returns:
+        A list of information strings about the MultiheadAttention modules
+    """
+    attn_info = ["All MultiheadAttention modules before FSDP wrapping:"]
+    found_modules = False
+    attn_count = 0
+    
+    for name, module in model.named_modules():
+        if isinstance(module, torch.nn.MultiheadAttention):
+            found_modules = True
+            attn_count += 1
+            attn_info.append(f"\n[{attn_count}] MultiheadAttention module: {name}")
+            
+            # Get parent module information
+            parent_name = name.rsplit('.', 1)[0] if '.' in name else 'root'
+            attn_info.append(f"  Parent module: {parent_name}")
+            
+            # Weight information
+            if hasattr(module, 'in_proj_weight'):
+                attn_info.append(f"  in_proj_weight shape: {module.in_proj_weight.shape}")
+                attn_info.append(f"  in_proj_weight dtype: {module.in_proj_weight.dtype}")
+            if hasattr(module, 'out_proj'):
+                attn_info.append(f"  out_proj.weight shape: {module.out_proj.weight.shape}")
+                attn_info.append(f"  out_proj.weight dtype: {module.out_proj.weight.dtype}")
+            if hasattr(module, 'num_heads'):
+                attn_info.append(f"  num_heads: {module.num_heads}")
+            # Try to determine embed_dim
+            embed_dim = module.embed_dim if hasattr(module, 'embed_dim') else (
+                module.out_proj.weight.shape[0] if hasattr(module, 'out_proj') else 'unknown'
+            )
+            attn_info.append(f"  embed_dim: {embed_dim}")
+    
+    attn_info.append(f"\nTotal MultiheadAttention modules found: {attn_count}")
+    
+    # Log the information
+    info_str = "\n".join(attn_info)
+    if logger:
+        if found_modules:
+            logger.info(info_str)
+    else:
+        if found_modules:
+            print(info_str)
+    
+    return attn_info, found_modules
+
+def debug_attention_forward(attn_module, x, attn_mask=None, need_weights=False):
+    """
+    Debug wrapper for MultiheadAttention forward pass that collects detailed diagnostic information
+    in case of errors, useful for understanding issues with attention operations during training.
+    
+    Args:
+        attn_module: The MultiheadAttention module
+        x: Input tensor to attention module
+        attn_mask: Optional attention mask
+        need_weights: Whether to return attention weights
+        
+    Returns:
+        The result of the attention operation
+        
+    Raises:
+        ValueError with detailed diagnostic information if an error occurs
+    """
+    # Collect debug information
+    debug_info = []
+    debug_info.append(f"Input x shape: {x.shape}")
+    
+    # Collect attention module weights information
+    try:
+        # Check if we can access the attention module weights
+        debug_info.append(f"Self-attention in_proj_weight shape: {attn_module.in_proj_weight.shape if hasattr(attn_module, 'in_proj_weight') else 'None'}")
+        debug_info.append(f"Self-attention out_proj.weight shape: {attn_module.out_proj.weight.shape}")
+        debug_info.append(f"Self-attention out_proj.bias shape: {attn_module.out_proj.bias.shape if attn_module.out_proj.bias is not None else 'None'}")
+        debug_info.append(f"Self-attention weight dtype: {attn_module.out_proj.weight.dtype}")
+    except Exception as e:
+        debug_info.append(f"Error accessing attention weights: {e}")
+    
+    try:
+        # Perform the actual attention operation
+        return attn_module(x, x, x, attn_mask=attn_mask, need_weights=need_weights)
+    except Exception as e:
+        # Add error information
+        debug_info.append(f"Error in attention forward pass: {e}")
+        debug_info.append(f"q, k, v shapes: {x.shape}")
+        if hasattr(attn_module, 'out_proj'):
+            debug_info.append(f"out_proj.weight: {attn_module.out_proj.weight.shape}, {attn_module.out_proj.weight.dtype}")
+        
+        # Raise all collected debug information as a single ValueError
+        try:
+            raise ValueError("Attention module diagnostic information:\n" + "\n".join(debug_info)) from e
+        except ValueError as e:
+            logger.error(str(e))
+

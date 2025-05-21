@@ -53,7 +53,7 @@ training:
   future_weight: 1.0
   temporal_weight: 0.5
   
-  mixed_precision: false
+  mixed_precision: true
   gradient_accumulation: 8
   gradient_clipping: 1.0
   
@@ -66,6 +66,9 @@ training:
   
   # Memory optimizations
   activation_checkpointing: true
+  
+  # Debugging options
+  debug: true  # Enable model inspection and detailed diagnostics
   
   epochs: 300
   amp_device: "cuda"

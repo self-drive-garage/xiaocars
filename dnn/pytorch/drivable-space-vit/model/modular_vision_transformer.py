@@ -439,6 +439,8 @@ class ModularVisionTransformer(nn.Module):
             if ego_features_seq is not None:
                 ego_features_t = ego_features_seq[:, t]  # [B, embed_dim]
             
+            # raise ValueError(f"left features shape is {left_frame.shape} and ego features shape is {ego_features_t.shape}")
+
             # Process each view with spatial transformer
             left_features = self.spatial_transformer(left_frame, ego_features_t)  # [B, 1+N, D]
             center_features = self.spatial_transformer(center_frame, ego_features_t)  # [B, 1+N, D]

@@ -39,6 +39,7 @@ from model.modular_vision_transformer import (
 
 from utils.train_utils import (
     seed_everything,
+    inspect_multihead_attention_modules,
 )
 
 from utils.validate import validate
@@ -398,6 +399,20 @@ def create_fsdp_model(cfg):
         for info in module_info:
             logger.info(info)
     
+    # Verify MultiheadAttention module shapes before FSDP wrapping if debug is enabled
+    if dist.get_rank() == 0 and hasattr(cfg.training, 'debug') and cfg.training.debug:  # Only on rank 0 with debug enabled
+        # Use the utility function to inspect MultiheadAttention modules
+        attn_info, found_modules = inspect_multihead_attention_modules(base_model, logger)
+        
+        if found_modules:
+            # Raise exception to be visible in logs if needed
+            try:
+                raise ValueError("\n".join(attn_info))
+            except ValueError as e:
+                logger.error(str(e))
+                # Uncomment to abort on attention issues:
+                # raise e
+    
     # Configure FSDP options
     
     # 1. Determine transformer layers for auto wrapping policy
@@ -415,10 +430,12 @@ def create_fsdp_model(cfg):
         MotionGuidedFuturePredictor,
         
         # PyTorch built-ins
-        torch.nn.MultiheadAttention,
         torch.nn.Linear,
         torch.nn.Sequential,
+        torch.nn.MultiheadAttention,  # Explicitly include MultiheadAttention for proper wrapping
     }
+    
+    # Include MultiheadAttention in the wrapping policy to ensure consistent handling
     
     # 2. Create auto wrapping policy
     auto_wrap_policy = functools.partial(
@@ -459,26 +476,44 @@ def create_fsdp_model(cfg):
     
     # 4. Configure mixed precision
     mixed_precision_config = None
+    target_dtype = None
     if cfg.training.mixed_precision:
         if torch.cuda.is_bf16_supported():
             # Use BFloat16 if supported (preferred for stability with transformers)
             logger.info("Using BFloat16 mixed precision for better stability")
+            target_dtype = torch.bfloat16
             mixed_precision_config = MixedPrecision(
-                param_dtype=torch.bfloat16,
-                reduce_dtype=torch.bfloat16,
-                buffer_dtype=torch.bfloat16
+                param_dtype=target_dtype,
+                reduce_dtype=target_dtype,
+                buffer_dtype=target_dtype
             )
+            # Ensure consistent dtype by setting default dtype for attention operations
+            torch.set_default_dtype(torch.bfloat16)
         else:
             # Fall back to FP16
             logger.info("BFloat16 not supported, falling back to FP16 mixed precision")
+            target_dtype = torch.float16
             mixed_precision_config = MixedPrecision(
-                param_dtype=torch.float16,
-                reduce_dtype=torch.float16,
-                buffer_dtype=torch.float16
+                param_dtype=target_dtype,
+                reduce_dtype=target_dtype,
+                buffer_dtype=target_dtype
             )
+            # Ensure consistent dtype by setting default dtype for attention operations
+            torch.set_default_dtype(torch.float16)
+        
+        # Explicitly convert model parameters to target dtype before FSDP wrapping
+        logger.info(f"Converting model parameters to {target_dtype}")
+        for param in base_model.parameters():
+            param.data = param.data.to(target_dtype)
+            
+        # Also convert buffers like running mean/var
+        for buffer_name, buffer in base_model.named_buffers():
+            base_model._buffers[buffer_name] = buffer.to(target_dtype)
     else:
         # Log that we're using full precision
         logger.info("Using full precision (FP32)")
+        # Ensure all operations use consistent dtype
+        torch.set_default_dtype(torch.float32)
     
     # 5. Configure sharding strategy based on zero_stage
     sharding_strategy = ShardingStrategy.FULL_SHARD  # Default to ZeRO-3 equivalent
