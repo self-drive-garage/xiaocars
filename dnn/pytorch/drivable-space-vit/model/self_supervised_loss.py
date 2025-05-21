@@ -1,5 +1,9 @@
 import torch
 import torch.nn as nn
+import logging
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 class SelfSupervisedLoss(nn.Module):
     """Combined loss for self-supervised training"""
@@ -88,8 +92,12 @@ class SelfSupervisedLoss(nn.Module):
         
         # Future prediction loss (if available)
         if 'future_prediction' in outputs and batch.get('future_features') is not None:
-            future_pred = outputs['future_prediction']
-            future_target = batch['future_features']
+            future_pred = outputs['future_prediction']  # Expected shape [B, 3*embed_dim]
+            future_target = batch['future_features']    # Target future features
+            
+            # Add debugging information for dimension mismatches
+            if future_pred.size(1) != future_target.size(1):
+                logger.info(f"Future prediction dimension mismatch - pred: {future_pred.shape}, target: {future_target.shape}")
             
             # Handle dimension mismatch - initialize projection layer if needed
             if self.future_projection is None and future_pred.size(1) != future_target.size(1):
@@ -100,6 +108,8 @@ class SelfSupervisedLoss(nn.Module):
                 nn.init.xavier_uniform_(self.future_projection.weight, gain=0.01)
                 nn.init.zeros_(self.future_projection.bias)
                 print(f"Created projection layer from {input_dim} to {output_dim} features")
+                print(f"This is expected if the model architecture has changed. The projection layer adapts the")
+                print(f"future prediction output dimensions to match the expected target dimensions.")
             
             # Apply projection if needed
             if self.future_projection is not None:
@@ -143,7 +153,4 @@ class SelfSupervisedLoss(nn.Module):
     
     def _get_device(self, outputs):
         """Helper method to get the device from outputs"""
-        for key, value in outputs.items():
-            if isinstance(value, torch.Tensor):
-                return value.device
-        return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        return torch.device('cuda')

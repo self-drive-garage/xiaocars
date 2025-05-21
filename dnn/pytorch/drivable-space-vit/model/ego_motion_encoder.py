@@ -127,7 +127,7 @@ class EgoMotionEncoder(nn.Module):
         
         # Remove sequence dimension
         return features.squeeze(1)  # (B, E)
-
+    
 class MotionGuidedAttention(nn.Module):
     """Attention module that uses ego motion to guide visual attention"""
     def __init__(self, embed_dim, num_heads=8):

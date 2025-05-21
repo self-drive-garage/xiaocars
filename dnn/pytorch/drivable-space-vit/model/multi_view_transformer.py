@@ -10,7 +10,7 @@ from .patch_embed import PatchEmbed
 from .transformer_encoder_layer import TransformerEncoderLayer
 from .cross_view_transformer_layer import CrossViewTransformerLayer
 from .temporal_transfomer_layer import TemporalTransformerLayer
-from .ego_motion_encoder import EgoMotionEncoder, MotionGuidedAttention
+from .ego_motion_encoder import EgoMotionEncoder
 from .drivable_space_decoder import DrivableSpaceDecoder
 from .future_predictor import MotionGuidedFuturePredictor
 
@@ -255,19 +255,6 @@ class MultiViewTransformer(nn.Module):
             config=config,
         )
         
-        # Motion-guided attention for each view
-        self.motion_attention = MotionGuidedAttention(
-            embed_dim=self.embed_dim,
-            num_heads=num_heads,
-        )
-        
-        # Early ego motion conditioning module
-        self.early_motion_conditioning = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim),
-            nn.GELU(),
-            nn.Dropout(dropout_value),
-        )
-        
         # Position embeddings for spatial transformer
         self.pos_embed = nn.Parameter(
             torch.zeros(1, self.num_patches, self.embed_dim),
@@ -319,9 +306,6 @@ class MultiViewTransformer(nn.Module):
             attn_dropout=attn_dropout_value,
             config=config,
         )
-        
-        # Temporal projection layer for combined CLS tokens
-        self.temporal_projection = nn.Linear(3 * self.embed_dim, self.embed_dim)
         
         # Image reconstruction decoder (simple MLP)
         self.image_reconstruction_decoder = nn.Sequential(
@@ -397,15 +381,11 @@ class MultiViewTransformer(nn.Module):
         center_patches = torch.cat([cls_center, center_patches], dim=1)  # (B, 1+N, E)
         right_patches = torch.cat([cls_right, right_patches], dim=1)  # (B, 1+N, E)
         
-        # Transform ego features for conditioning
-        motion_cond = self.early_motion_conditioning(ego_features)  # (B, E)
-        
         # Add motion features to all patches including CLS token
-        motion_cond = motion_cond.unsqueeze(1)  # (B, 1, E)
-        left_patches = left_patches + motion_cond
-        center_patches = center_patches + motion_cond
-        right_patches = right_patches + motion_cond
-        
+        left_patches = left_patches + ego_features.unsqueeze(1)  # (B, 1, E)
+        center_patches = center_patches + ego_features.unsqueeze(1)  # (B, 1, E)
+        right_patches = right_patches + ego_features.unsqueeze(1)  # (B, 1, E)
+
         # Apply dropout
         left_patches = self.pos_drop(left_patches)
         center_patches = self.pos_drop(center_patches)
@@ -434,9 +414,6 @@ class MultiViewTransformer(nn.Module):
         return left_patches, center_patches, right_patches
     
     def temporal_encode(self, features):
-        # Project if needed
-        if features.shape[-1] == 3 * self.embed_dim:
-            features = self.temporal_projection(features)
         
         # Apply temporal transformer block
         features = self.temporal_transformer_block(features)
@@ -485,17 +462,7 @@ class MultiViewTransformer(nn.Module):
         left_features = torch.stack(left_features_seq, dim=1)  # (B, T, 1+N, E)
         center_features = torch.stack(center_features_seq, dim=1)  # (B, T, 1+N, E)
         right_features = torch.stack(right_features_seq, dim=1)  # (B, T, 1+N, E)
-        
-        # Use ego motion for motion-guided attention on temporal features
-        left_motion_attn = self.motion_attention(left_features, ego_features_seq)  # (B, T, N, 1)
-        center_motion_attn = self.motion_attention(center_features, ego_features_seq)  # (B, T, N, 1)
-        right_motion_attn = self.motion_attention(right_features, ego_features_seq)  # (B, T, N, 1)
-        
-        # Apply attention weights to features with residual connection
-        left_features = left_features * left_motion_attn + left_features
-        center_features = center_features * center_motion_attn + center_features
-        right_features = right_features * right_motion_attn + right_features
-        
+   
         # Reshape for temporal transformer
         # Combine left, center, and right features for joint temporal processing
         B, T, N, E = left_features.shape
@@ -518,7 +485,41 @@ class MultiViewTransformer(nn.Module):
         right_patches = right_patches.permute(0, 2, 1, 3)  # (B, N-1, T, E)
         
         # Apply temporal transformer to CLS tokens (for global temporal understanding)
-        cls_features = self.temporal_encode(cls_temporal)  # (B, T, E) after projection
+        cls_features = self.temporal_encode(cls_temporal)  # (B, T, 3*E)
+        
+        # Apply temporal encoding to patch tokens
+        B, N_minus_1, T, E = left_patches.shape
+        
+        # Process each patch position through temporal encoder
+        left_patches_temporal = []
+        center_patches_temporal = []
+        right_patches_temporal = []
+        
+        for i in range(N_minus_1):
+            # Extract this patch position from all three views and all timestamps
+            left_patch_i = left_patches[:, i]  # (B, T, E)
+            center_patch_i = center_patches[:, i]  # (B, T, E)
+            right_patch_i = right_patches[:, i]  # (B, T, E)
+            
+            # Apply temporal encoding to each view's patch separately
+            left_patch_i_temporal = self.temporal_encode(left_patch_i)  # (B, T, E)
+            center_patch_i_temporal = self.temporal_encode(center_patch_i)  # (B, T, E)
+            right_patch_i_temporal = self.temporal_encode(right_patch_i)  # (B, T, E)
+            
+            # Store the temporally encoded patches
+            left_patches_temporal.append(left_patch_i_temporal)
+            center_patches_temporal.append(center_patch_i_temporal)
+            right_patches_temporal.append(right_patch_i_temporal)
+        
+        # Stack back to original shape with temporal encoding applied
+        left_patches = torch.stack(left_patches_temporal, dim=1)  # (B, N-1, T, E)
+        center_patches = torch.stack(center_patches_temporal, dim=1)  # (B, N-1, T, E)
+        right_patches = torch.stack(right_patches_temporal, dim=1)  # (B, N-1, T, E)
+        
+        # Transform back to original shape for further processing
+        left_patches = left_patches.permute(0, 2, 1, 3)  # (B, T, N-1, E)
+        center_patches = center_patches.permute(0, 2, 1, 3)  # (B, T, N-1, E)
+        right_patches = right_patches.permute(0, 2, 1, 3)  # (B, T, N-1, E)
         
         # Store original combined features for future prediction
         combined_cls_features = cls_temporal  # (B, T, 3*E)
