@@ -1,5 +1,8 @@
 import torch
 import torch.nn as nn
+import logging
+
+logger = logging.getLogger(__name__)
 
 def get_default_config():
     """Return default configuration parameters for EgoMotionEncoder"""
@@ -33,124 +36,74 @@ class EgoMotionEncoder(nn.Module):
         self.embed_dim = embed_dim if embed_dim is not None else model_config.get('embed_dim', default_config['embed_dim'])
         dropout_value = dropout if dropout is not None else model_config.get('dropout', default_config['dropout'])
         
-        # Component-specific feature dim
-        feature_dim = self.embed_dim // 6
-        
-        # Position encoder (x, y, z)
-        self.position_encoder = nn.Sequential(
-            nn.Linear(3, feature_dim),
-            nn.GELU(),
-            nn.Dropout(dropout_value),
-        )
-        
-        # Orientation encoder (roll, pitch, yaw)
-        self.orientation_encoder = nn.Sequential(
-            nn.Linear(3, feature_dim),
-            nn.GELU(),
-            nn.Dropout(dropout_value),
-        )
-        
+        # Component-specific feature dim - each component gets 1/3 of the embedding dimension
+        # since we have 3 components (velocity, acceleration, angular velocity)
+        feature_dim = self.embed_dim // 3
+
         # Linear acceleration encoder (x, y)
         self.accel_encoder = nn.Sequential(
-            nn.Linear(2, feature_dim),
+            nn.Linear(3, feature_dim),
             nn.GELU(),
             nn.Dropout(dropout_value),
         )
         
         # Linear velocity encoder (x, y)
         self.velocity_encoder = nn.Sequential(
-            nn.Linear(2, feature_dim),
+            nn.Linear(3, feature_dim),
             nn.GELU(),
             nn.Dropout(dropout_value),
         )
         
         # Angular velocity encoder (roll, yaw)
         self.angular_vel_encoder = nn.Sequential(
-            nn.Linear(2, feature_dim),
+            nn.Linear(3, feature_dim),
             nn.GELU(),
             nn.Dropout(dropout_value),
         )
         
-        # Full dynamics encoder for fallback
+        # Full dynamics encoder for 3 feature groups
         self.dynamics_encoder = nn.Sequential(
-            nn.Linear(self.ego_motion_dim, self.embed_dim // 4),
-            nn.GELU(),
-            nn.Dropout(dropout_value),
-        )
-        
-        # Final projection
-        self.projection = nn.Sequential(
-            nn.Linear(5 * feature_dim, self.embed_dim // 2),
+            nn.Linear(3 * feature_dim, self.embed_dim // 2),
             nn.GELU(),
             nn.Dropout(dropout_value),
             nn.Linear(self.embed_dim // 2, self.embed_dim),
             nn.Dropout(dropout_value),
         )
         
-        # Legacy encoder for backward compatibility
-        self.encoder = nn.Sequential(
-            nn.Linear(self.ego_motion_dim, self.embed_dim // 4),
-            nn.GELU(),
-            nn.Dropout(dropout_value),
-            nn.Linear(self.embed_dim // 4, self.embed_dim // 2),
-            nn.GELU(),
-            nn.Dropout(dropout_value),
-            nn.Linear(self.embed_dim // 2, self.embed_dim),
-            nn.Dropout(dropout_value),
-        )
-        
-        # Conditioning module for early integration - NEW
-        self.conditioning_proj = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim),
-            nn.GELU(),
-            nn.Dropout(dropout_value),
-        )
-    
     def forward(self, x):
         # x shape: (batch_size, seq_len, ego_motion_dim)
         B, T, D = x.shape
         
-        # Use enhanced processing if we have the expected dimensions (9)
-        if D >= 9:
-            # Split into components based on new structure
-            velocity = x[:, :, 0:3]        # x, y, z velocity
-            acceleration = x[:, :, 3:6]    # x, y, z acceleration
-            angular_vel = x[:, :, 6:9]     # x, y, z angular velocity
-            
-            # Process velocity using position encoder
-            vel_features = self.position_encoder(velocity)
-            
-            # Process acceleration
-            accel_features = self.position_encoder(acceleration)
-            
-            # Process angular velocity using orientation encoder
-            ang_vel_features = self.orientation_encoder(angular_vel)
-            
-            # Process with component encoders (reusing existing components)
-            # We're reusing the position encoder for velocity and acceleration
-            # and orientation encoder for angular velocity
-            
-            # Generate dummy features for backward compatibility
-            pos_features = torch.zeros_like(vel_features)
-            ori_features = torch.zeros_like(ang_vel_features)
-            
-            # Concatenate features
-            combined = torch.cat([
-                pos_features,  # Placeholder
-                ori_features,  # Placeholder
-                accel_features, 
-                vel_features, 
-                ang_vel_features
-            ], dim=-1)
-            
-            # Final projection
-            output = self.projection(combined)
-            
-            return output  # (batch_size, seq_len, embed_dim)
-        else:
-            # Fallback to legacy encoder
-            return self.encoder(x)
-    
+        # Split into components based on new structure
+        velocity = x[:, :, 0:3]        # x, y, z velocity - shape: (B, T, 3)
+        acceleration = x[:, :, 3:6]    # x, y, z acceleration - shape: (B, T, 3)
+        angular_vel = x[:, :, 6:9]     # x, y, z angular velocity - shape: (B, T, 3)
+        
+        # Debug velocity tensor
+        logger.debug(f"velocity shape: {velocity.shape}, dtype: {velocity.dtype}")
+        
+        # Debug position encoder 
+        pos_linear = self.position_encoder[0]
+        logger.debug(f"position_encoder[0] weight shape: {pos_linear.weight.shape}, bias shape: {pos_linear.bias.shape}")
+        
+        # Process each component directly - nn.Linear can handle 3D inputs
+        # The linear transformation is applied only to the last dimension
+        vel_features = self.velocity_encoder(velocity)  # shape: (B, T, feature_dim)
+        accel_features = self.accel_encoder(acceleration)  # shape: (B, T, feature_dim)
+        ang_vel_features = self.angular_vel_encoder(angular_vel)  # shape: (B, T, feature_dim)
+        
+        # Concatenate only the real features
+        combined = torch.cat([
+            accel_features, 
+            vel_features, 
+            ang_vel_features
+        ], dim=-1)  # shape: (B, T, 3*feature_dim)
+        
+        # Final projection
+        output = self.dynamics_encoder(combined)  # shape: (B, T, embed_dim)
+        
+        return output
+
     def encode_frame(self, x):
         """
         Process a single frame or batch of frames (without sequence dimension)
@@ -161,37 +114,19 @@ class EgoMotionEncoder(nn.Module):
         Returns:
             Encoded features with shape (batch_size, embed_dim)
         """
+        # Add debugging for input tensor
+        logger.debug(f"encode_frame input shape: {x.shape}, dtype: {x.dtype}")
+        
         # Add sequence dimension if not present
         if len(x.shape) == 2:
             x = x.unsqueeze(1)  # (B, 1, D)
-            
+            logger.debug(f"After unsqueeze, x shape: {x.shape}")
+        
         # Process with forward
         features = self.forward(x)  # (B, 1, E)
         
         # Remove sequence dimension
         return features.squeeze(1)  # (B, E)
-    
-    def get_conditioning_features(self, x):
-        """
-        Get features specifically processed for early conditioning
-        
-        Args:
-            x: Ego motion data with shape (batch_size, seq_len, ego_motion_dim)
-                or (batch_size, ego_motion_dim)
-                
-        Returns:
-            Conditioning features with same shape as input but last dim is embed_dim
-        """
-        # Process ego motion first
-        if len(x.shape) == 2:
-            # Single frame
-            features = self.encode_frame(x)  # (B, E)
-        else:
-            # Sequence
-            features = self.forward(x)  # (B, T, E)
-        
-        # Apply conditioning projection
-        return self.conditioning_proj(features)
 
 class MotionGuidedAttention(nn.Module):
     """Attention module that uses ego motion to guide visual attention"""

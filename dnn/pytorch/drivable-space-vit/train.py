@@ -56,9 +56,17 @@ from model.future_predictor import MotionGuidedFuturePredictor
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('debug.log')
+    ]
 )
 logger = logging.getLogger(__name__)
+
+# Set DEBUG level for our custom modules to capture detailed tensor shapes
+logging.getLogger('model').setLevel(logging.DEBUG)
+logging.getLogger('utils').setLevel(logging.DEBUG)
 
 os.environ["NCCL_DEBUG"] = "INFO"
 os.environ["TORCH_NCCL_TRACE_BUFFER_SIZE"] = "8388608"  # 8MB for debug traces
@@ -361,10 +369,6 @@ def init_distributed_training(cfg):
 
 def create_fsdp_model(cfg):
     """Create model and wrap with FSDP based on configuration"""
-    # Note: The config may still have legacy parameters like 'num_channels', 'num_layers',
-    # 'use_transformer_layers', and 'use_modular_architecture', but these are ignored
-    # as we're now using only the modular architecture.
-    
     # Create modular model
     base_model = create_modular_model(
         img_size=cfg.model.img_size,
@@ -430,9 +434,9 @@ def create_fsdp_model(cfg):
         MotionGuidedFuturePredictor,
         
         # PyTorch built-ins
-        torch.nn.Linear,
-        torch.nn.Sequential,
-        torch.nn.MultiheadAttention,  # Explicitly include MultiheadAttention for proper wrapping
+        # torch.nn.Linear,
+        # torch.nn.Sequential,
+        # torch.nn.MultiheadAttention,  # Explicitly include MultiheadAttention for proper wrapping
     }
     
     # Include MultiheadAttention in the wrapping policy to ensure consistent handling
@@ -516,20 +520,11 @@ def create_fsdp_model(cfg):
         torch.set_default_dtype(torch.float32)
     
     # 5. Configure sharding strategy based on zero_stage
-    sharding_strategy = ShardingStrategy.FULL_SHARD  # Default to ZeRO-3 equivalent
-    # if hasattr(cfg.training, 'fsdp_sharding_strategy'):
-    #     if cfg.training.fsdp_sharding_strategy == "SHARD_GRAD_OP":
-    #         sharding_strategy = ShardingStrategy.SHARD_GRAD_OP
-    #     elif cfg.training.fsdp_sharding_strategy == "FULL_SHARD":
-    #         sharding_strategy = ShardingStrategy.FULL_SHARD
-    #     elif cfg.training.fsdp_sharding_strategy == "NO_SHARD":
-    #         sharding_strategy = ShardingStrategy.NO_SHARD
-    
-    # 6. Configure CPU offloading
+    sharding_strategy = ShardingStrategy.SHARD_GRAD_OP  # Default to ZeRO-2 equivalent
+
+    # 6. Disable CPU offloading
     cpu_offload = None
-    # if hasattr(cfg.training, 'fsdp_cpu_offload') and cfg.training.fsdp_cpu_offload:
-    #     cpu_offload = CPUOffload(offload_params=True)
-    
+
     # Configure backward prefetch
     backward_prefetch = BackwardPrefetch.BACKWARD_PRE  # Default
     if hasattr(cfg.training, 'fsdp_backward_prefetch'):
@@ -551,34 +546,9 @@ def create_fsdp_model(cfg):
         'backward_prefetch': backward_prefetch,
         'mixed_precision': mixed_precision_config,
         'device_id': torch.cuda.current_device(),
-        'use_orig_params': use_orig_params,
+        'use_orig_params': True,
         'limit_all_gathers': True,
     }
-    
-    # Explicitly wrap the heavyweight transformer modules first
-    # This ensures they are properly sharded across GPUs
-    """
-    if hasattr(base_model, 'spatial_transformer_layers'):
-        base_model.spatial_transformer_layers = FSDP(
-            base_model.spatial_transformer_layers, 
-            **fsdp_config
-        )
-        logger.info("Explicitly wrapped spatial_transformer_layers with FSDP")
-    
-    if hasattr(base_model, 'cross_view_transformer_layers'):
-        base_model.cross_view_transformer_layers = FSDP(
-            base_model.cross_view_transformer_layers, 
-            **fsdp_config
-        )
-        logger.info("Explicitly wrapped cross_view_transformer_layers with FSDP")
-    
-    if hasattr(base_model, 'temporal_transformer_layers'):
-        base_model.temporal_transformer_layers = FSDP(
-            base_model.temporal_transformer_layers, 
-            **fsdp_config
-        )
-        logger.info("Explicitly wrapped temporal_transformer_layers with FSDP")
-    """
     
     # Now wrap the entire model with FSDP
     fsdp_model = FSDP(

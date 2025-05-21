@@ -1,6 +1,10 @@
 import torch
 import torch.nn as nn
+import logging
 from utils.train_utils import debug_attention_forward
+
+# Get logger
+logger = logging.getLogger(__name__)
 
 def get_default_config():
     """Return default configuration parameters for TransformerEncoderLayer"""
@@ -72,14 +76,41 @@ class TransformerEncoderLayer(nn.Module):
         residual = x
         x = self.norm1(x)
         
+        # Add shape diagnostics
+        logger.debug(f"TransformerEncoderLayer input x shape: {x.shape}, dtype: {x.dtype}")
+        logger.debug(f"TransformerEncoderLayer x dims: {len(x.shape)}, is_contiguous: {x.is_contiguous()}")
+        
+        if x.ndim != 3:
+            logger.error(f"ERROR: Expected 3D tensor [B, Seq, D] but got shape {x.shape} with {x.ndim} dimensions")
+            # Try to recover by unsqueezing if possible
+            if x.ndim == 2:
+                logger.warning(f"Attempting to fix 2D tensor by unsqueezing to 3D")
+                x = x.unsqueeze(0)  # Add batch dimension
+                logger.warning(f"After unsqueeze: {x.shape}")
+        
+        # Additional diagnostics for attention params
+        logger.debug(f"Attention params: dim={self.dim}, num_heads={self.num_heads}")
+        logger.debug(f"Attention in_proj_weight shape: {self.attn.in_proj_weight.shape if hasattr(self.attn, 'in_proj_weight') else 'None'}")
+        logger.debug(f"Attention out_proj.weight shape: {self.attn.out_proj.weight.shape}")
+        
         # Use debug attention forward function if debug mode is enabled, otherwise use standard forward
         if self.debug_mode:
             # Use the utility function for debugging
             attn_out, _ = debug_attention_forward(self.attn, x, attn_mask=attn_mask, need_weights=False)
             x = attn_out
         else:
-            # Standard forward pass
-            x, _ = self.attn(x, x, x, attn_mask=attn_mask, need_weights=False)
+            try:
+                # Log shape right before attention call
+                logger.debug(f"About to call attention with input shape: {x.shape}")
+                x, _ = self.attn(x, x, x, attn_mask=attn_mask, need_weights=False)
+                logger.debug(f"Attention output shape: {x.shape}")
+            except Exception as e:
+                # Log detailed diagnostics on error
+                logger.error(f"Error in attention forward: {str(e)}")
+                logger.error(f"Input tensor shape: {x.shape}, ndim: {x.ndim}, dtype: {x.dtype}")
+                if hasattr(self.attn, 'out_proj'):
+                    logger.error(f"out_proj.weight: {self.attn.out_proj.weight.shape}, dtype: {self.attn.out_proj.weight.dtype}")
+                raise
         
         x = residual + x
         

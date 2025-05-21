@@ -53,7 +53,7 @@ training:
   future_weight: 1.0
   temporal_weight: 0.5
   
-  mixed_precision: true
+  mixed_precision: false
   gradient_accumulation: 8
   gradient_clipping: 1.0
   

@@ -234,9 +234,7 @@ class MultiViewTransformer(nn.Module):
         dropout_value = dropout if dropout is not None else model_config['dropout']
         attn_dropout_value = attn_dropout if attn_dropout is not None else model_config['attn_dropout']
         ego_motion_dim = ego_motion_dim if ego_motion_dim is not None else model_config['ego_motion_dim']
-        
-        # Check if we should use transformer layers
-        self.use_transformer_layers = model_config.get('use_transformer_layers', True)
+
         
         self.num_patches = (self.img_size // self.patch_size) ** 2
         
@@ -249,7 +247,7 @@ class MultiViewTransformer(nn.Module):
             config=config,
         )
         
-        # Ego motion encoder - MOVED EARLIER in the model architecture
+        # Ego motion encoder
         self.ego_motion_encoder = EgoMotionEncoder(
             ego_motion_dim=ego_motion_dim,
             embed_dim=self.embed_dim,
@@ -263,7 +261,7 @@ class MultiViewTransformer(nn.Module):
             num_heads=num_heads,
         )
         
-        # Early ego motion conditioning module - NEW
+        # Early ego motion conditioning module
         self.early_motion_conditioning = nn.Sequential(
             nn.Linear(self.embed_dim, self.embed_dim),
             nn.GELU(),
@@ -284,45 +282,43 @@ class MultiViewTransformer(nn.Module):
         # Dropout after pos embed
         self.pos_drop = nn.Dropout(dropout_value)
         
-        # Only create transformer blocks if enabled
-        if self.use_transformer_layers:
-            # Create transformer blocks for FSDP-friendly wrapping
-            spatial_layers = depth // 3  # Use 1/3 of layers for spatial processing
-            cross_view_layers = depth // 3  # Use 1/3 of layers for cross-view fusion
-            temporal_layers = depth // 3  # Use 1/3 of layers for temporal modeling
-            
-            # Spatial transformer block for each view
-            self.spatial_transformer_block = SpatialTransformerBlock(
-                embed_dim=self.embed_dim,
-                num_heads=num_heads,
-                num_layers=spatial_layers,
-                mlp_ratio=mlp_ratio,
-                dropout=dropout_value,
-                attn_dropout=attn_dropout_value,
-                config=config,
-            )
-            
-            # Cross-view transformer block
-            self.cross_view_transformer_block = CrossViewTransformerBlock(
-                embed_dim=self.embed_dim,
-                num_heads=num_heads,
-                num_layers=cross_view_layers,
-                mlp_ratio=mlp_ratio,
-                dropout=dropout_value,
-                attn_dropout=attn_dropout_value,
-                config=config,
-            )
-            
-            # Temporal transformer block
-            self.temporal_transformer_block = TemporalTransformerBlock(
-                embed_dim=self.embed_dim,
-                num_heads=num_heads,
-                num_layers=temporal_layers,
-                mlp_ratio=mlp_ratio,
-                dropout=dropout_value,
-                attn_dropout=attn_dropout_value,
-                config=config,
-            )
+        # Create transformer blocks for FSDP-friendly wrapping
+        spatial_layers = depth // 3  # Use 1/3 of layers for spatial processing
+        cross_view_layers = depth // 3  # Use 1/3 of layers for cross-view fusion
+        temporal_layers = depth // 3  # Use 1/3 of layers for temporal modeling
+        
+        # Spatial transformer block for each view
+        self.spatial_transformer_block = SpatialTransformerBlock(
+            embed_dim=self.embed_dim,
+            num_heads=num_heads,
+            num_layers=spatial_layers,
+            mlp_ratio=mlp_ratio,
+            dropout=dropout_value,
+            attn_dropout=attn_dropout_value,
+            config=config,
+        )
+        
+        # Cross-view transformer block
+        self.cross_view_transformer_block = CrossViewTransformerBlock(
+            embed_dim=self.embed_dim,
+            num_heads=num_heads,
+            num_layers=cross_view_layers,
+            mlp_ratio=mlp_ratio,
+            dropout=dropout_value,
+            attn_dropout=attn_dropout_value,
+            config=config,
+        )
+        
+        # Temporal transformer block
+        self.temporal_transformer_block = TemporalTransformerBlock(
+            embed_dim=self.embed_dim,
+            num_heads=num_heads,
+            num_layers=temporal_layers,
+            mlp_ratio=mlp_ratio,
+            dropout=dropout_value,
+            attn_dropout=attn_dropout_value,
+            config=config,
+        )
         
         # Temporal projection layer for combined CLS tokens
         self.temporal_projection = nn.Linear(3 * self.embed_dim, self.embed_dim)
@@ -378,7 +374,7 @@ class MultiViewTransformer(nn.Module):
         )
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
     
-    def prepare_tokens_with_motion(self, left_imgs, center_imgs, right_imgs, ego_features=None):
+    def prepare_tokens_with_motion(self, left_imgs, center_imgs, right_imgs, ego_features):
         """Prepare tokens for each view with early ego motion integration"""
         B = left_imgs.shape[0]
         
@@ -401,16 +397,14 @@ class MultiViewTransformer(nn.Module):
         center_patches = torch.cat([cls_center, center_patches], dim=1)  # (B, 1+N, E)
         right_patches = torch.cat([cls_right, right_patches], dim=1)  # (B, 1+N, E)
         
-        # EARLY EGO MOTION INTEGRATION - condition patches with motion features
-        if ego_features is not None:
-            # Transform ego features for conditioning
-            motion_cond = self.early_motion_conditioning(ego_features)  # (B, E)
-            
-            # Add motion features to all patches including CLS token
-            motion_cond = motion_cond.unsqueeze(1)  # (B, 1, E)
-            left_patches = left_patches + motion_cond
-            center_patches = center_patches + motion_cond
-            right_patches = right_patches + motion_cond
+        # Transform ego features for conditioning
+        motion_cond = self.early_motion_conditioning(ego_features)  # (B, E)
+        
+        # Add motion features to all patches including CLS token
+        motion_cond = motion_cond.unsqueeze(1)  # (B, 1, E)
+        left_patches = left_patches + motion_cond
+        center_patches = center_patches + motion_cond
+        right_patches = right_patches + motion_cond
         
         # Apply dropout
         left_patches = self.pos_drop(left_patches)
@@ -420,23 +414,21 @@ class MultiViewTransformer(nn.Module):
         return left_patches, center_patches, right_patches
     
     def spatial_encode(self, left_patches, center_patches, right_patches):
-        # Apply transformer layers if enabled
-        if self.use_transformer_layers:
-            # Process each view independently with the same spatial transformer block
-            left_patches = self.spatial_transformer_block(left_patches)
-            center_patches = self.spatial_transformer_block(center_patches)
-            right_patches = self.spatial_transformer_block(right_patches)
+        
+        # Process each view independently with the same spatial transformer block
+        left_patches = self.spatial_transformer_block(left_patches)
+        center_patches = self.spatial_transformer_block(center_patches)
+        right_patches = self.spatial_transformer_block(right_patches)
         
         # If transformer layers aren't enabled, just pass through
         return left_patches, center_patches, right_patches
     
     def cross_view_fusion(self, left_patches, center_patches, right_patches):
-        # Apply transformer layers if enabled
-        if self.use_transformer_layers:
-            # Apply cross-view transformer block
-            left_patches, center_patches, right_patches = self.cross_view_transformer_block(
-                left_patches, center_patches, right_patches
-            )
+        
+        # Apply cross-view transformer block
+        left_patches, center_patches, right_patches = self.cross_view_transformer_block(
+            left_patches, center_patches, right_patches
+        )
         
         # If transformer layers aren't enabled, just pass through
         return left_patches, center_patches, right_patches
@@ -446,23 +438,18 @@ class MultiViewTransformer(nn.Module):
         if features.shape[-1] == 3 * self.embed_dim:
             features = self.temporal_projection(features)
         
-        # Apply transformer layers if enabled
-        if self.use_transformer_layers:
-            # Apply temporal transformer block
-            features = self.temporal_transformer_block(features)
+        # Apply temporal transformer block
+        features = self.temporal_transformer_block(features)
         
         return features
     
-    def forward_features(self, left_imgs, center_imgs, right_imgs, ego_motion=None):
+    def forward_features(self, left_imgs, center_imgs, right_imgs, ego_motion):
         # left_imgs, center_imgs, right_imgs shape: (B, T, C, H, W)
         # ego_motion shape: (B, T, ego_motion_dim)
         B, T, C, H, W = left_imgs.shape
         
-        # EARLY EGO MOTION PROCESSING (Approach 1)
-        ego_features_seq = None
-        if ego_motion is not None:
-            # Process ego motion for the entire sequence first
-            ego_features_seq = self.ego_motion_encoder(ego_motion)  # (B, T, E)
+        # Process ego motion for the entire sequence first
+        ego_features_seq = self.ego_motion_encoder(ego_motion)  # (B, T, E)
         
         # Process each frame in the sequence
         left_features_seq = []
@@ -476,9 +463,7 @@ class MultiViewTransformer(nn.Module):
             right_frame = right_imgs[:, t]  # (B, C, H, W)
             
             # Get ego features for this timestep
-            ego_features_t = None
-            if ego_features_seq is not None:
-                ego_features_t = ego_features_seq[:, t]  # (B, E)
+            ego_features_t = ego_features_seq[:, t]  # (B, E)
             
             # Prepare tokens with early motion integration
             left_patches, center_patches, right_patches = self.prepare_tokens_with_motion(
@@ -501,18 +486,15 @@ class MultiViewTransformer(nn.Module):
         center_features = torch.stack(center_features_seq, dim=1)  # (B, T, 1+N, E)
         right_features = torch.stack(right_features_seq, dim=1)  # (B, T, 1+N, E)
         
-        # ADDITIONAL EGO MOTION INTEGRATION for temporal processing
-        if ego_motion is not None and ego_features_seq is not None:
-            # Use ego motion for motion-guided attention on temporal features
-            # Apply motion-guided attention to visual features
-            left_motion_attn = self.motion_attention(left_features, ego_features_seq)  # (B, T, N, 1)
-            center_motion_attn = self.motion_attention(center_features, ego_features_seq)  # (B, T, N, 1)
-            right_motion_attn = self.motion_attention(right_features, ego_features_seq)  # (B, T, N, 1)
-            
-            # Apply attention weights to features with residual connection
-            left_features = left_features * left_motion_attn + left_features
-            center_features = center_features * center_motion_attn + center_features
-            right_features = right_features * right_motion_attn + right_features
+        # Use ego motion for motion-guided attention on temporal features
+        left_motion_attn = self.motion_attention(left_features, ego_features_seq)  # (B, T, N, 1)
+        center_motion_attn = self.motion_attention(center_features, ego_features_seq)  # (B, T, N, 1)
+        right_motion_attn = self.motion_attention(right_features, ego_features_seq)  # (B, T, N, 1)
+        
+        # Apply attention weights to features with residual connection
+        left_features = left_features * left_motion_attn + left_features
+        center_features = center_features * center_motion_attn + center_features
+        right_features = right_features * right_motion_attn + right_features
         
         # Reshape for temporal transformer
         # Combine left, center, and right features for joint temporal processing
