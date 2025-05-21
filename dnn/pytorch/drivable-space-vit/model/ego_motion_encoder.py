@@ -79,13 +79,6 @@ class EgoMotionEncoder(nn.Module):
         acceleration = x[:, :, 3:6]    # x, y, z acceleration - shape: (B, T, 3)
         angular_vel = x[:, :, 6:9]     # x, y, z angular velocity - shape: (B, T, 3)
         
-        # Debug velocity tensor
-        logger.debug(f"velocity shape: {velocity.shape}, dtype: {velocity.dtype}")
-        
-        # Debug position encoder 
-        pos_linear = self.position_encoder[0]
-        logger.debug(f"position_encoder[0] weight shape: {pos_linear.weight.shape}, bias shape: {pos_linear.bias.shape}")
-        
         # Process each component directly - nn.Linear can handle 3D inputs
         # The linear transformation is applied only to the last dimension
         vel_features = self.velocity_encoder(velocity)  # shape: (B, T, feature_dim)
