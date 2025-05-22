@@ -19,8 +19,15 @@ class SelfSupervisedLoss(nn.Module):
         
         # Add a projection layer to handle dimension mismatch in future prediction
         self.future_projection = None
+        
+        # Log initialization params
+        logger.debug(f"SelfSupervisedLoss::__init__ - Initialized with weights: reconstruction={reconstruction_weight}, consistency={consistency_weight}, future={future_weight}")
     
     def forward(self, outputs, batch):
+        # Log available keys in outputs
+        logger.debug(f"SelfSupervisedLoss::forward - Available keys in outputs: {list(outputs.keys())}")
+        logger.debug(f"SelfSupervisedLoss::forward - Available keys in batch: {list(batch.keys())}")
+        
         # Track if we've added any loss components
         has_loss_components = False
         loss_dict = {}
@@ -38,9 +45,17 @@ class SelfSupervisedLoss(nn.Module):
             center_target = batch['center_images'][:, -1]  # (B, C, H, W)
             right_target = batch['right_images'][:, -1]  # (B, C, H, W)
             
+            # Log shapes and summary statistics
+            logger.debug(f"SelfSupervisedLoss::forward - Reconstruction targets - left: {left_target.shape}, center: {center_target.shape}, right: {right_target.shape}")
+            logger.debug(f"SelfSupervisedLoss::forward - Left target stats: min={left_target.min().item()}, max={left_target.max().item()}, mean={left_target.mean().item()}")
+            logger.debug(f"SelfSupervisedLoss::forward - Left reconstructed stats: min={outputs['left_reconstructed'].min().item()}, max={outputs['left_reconstructed'].max().item()}, mean={outputs['left_reconstructed'].mean().item()}")
+            
             left_recon_loss = self.reconstruction_loss(outputs['left_reconstructed'], left_target)
             center_recon_loss = self.reconstruction_loss(outputs['center_reconstructed'], center_target)
             right_recon_loss = self.reconstruction_loss(outputs['right_reconstructed'], right_target)
+            
+            # Log individual reconstruction losses
+            logger.debug(f"SelfSupervisedLoss::forward - Individual reconstruction losses - left: {left_recon_loss.item()}, center: {center_recon_loss.item()}, right: {right_recon_loss.item()}")
             
             # Average the reconstruction loss across all three views
             recon_loss = (left_recon_loss + center_recon_loss + right_recon_loss) / 3.0
@@ -52,6 +67,9 @@ class SelfSupervisedLoss(nn.Module):
                 
             has_loss_components = True
             loss_dict['reconstruction_loss'] = recon_loss.item()
+            logger.debug(f"SelfSupervisedLoss::forward - Added reconstruction loss: {recon_loss.item()} * weight {self.reconstruction_weight} = {(self.reconstruction_weight * recon_loss).item()}")
+        else:
+            logger.debug("SelfSupervisedLoss::forward - Skipping reconstruction loss - required keys not found in outputs")
         
         # View consistency loss (if available)
         if ('left_reconstructed' in outputs and 
@@ -64,20 +82,28 @@ class SelfSupervisedLoss(nn.Module):
             right_recon = outputs['right_reconstructed']
             
             # Calculate pairwise cosine similarities and convert to loss (1 - similarity)
-            left_center_consistency = 1.0 - self.consistency_loss(
+            left_center_sim = self.consistency_loss(
                 left_recon.reshape(left_recon.size(0), -1),
                 center_recon.reshape(center_recon.size(0), -1)
             ).mean()
             
-            center_right_consistency = 1.0 - self.consistency_loss(
+            center_right_sim = self.consistency_loss(
                 center_recon.reshape(center_recon.size(0), -1),
                 right_recon.reshape(right_recon.size(0), -1)
             ).mean()
             
-            left_right_consistency = 1.0 - self.consistency_loss(
+            left_right_sim = self.consistency_loss(
                 left_recon.reshape(left_recon.size(0), -1),
                 right_recon.reshape(right_recon.size(0), -1)
             ).mean()
+            
+            left_center_consistency = 1.0 - left_center_sim
+            center_right_consistency = 1.0 - center_right_sim
+            left_right_consistency = 1.0 - left_right_sim
+            
+            # Log similarity values
+            logger.debug(f"SelfSupervisedLoss::forward - Cosine similarities - left-center: {left_center_sim.item()}, center-right: {center_right_sim.item()}, left-right: {left_right_sim.item()}")
+            logger.debug(f"SelfSupervisedLoss::forward - Consistency losses - left-center: {left_center_consistency.item()}, center-right: {center_right_consistency.item()}, left-right: {left_right_consistency.item()}")
             
             # Average the consistency losses
             consistency = (left_center_consistency + center_right_consistency + left_right_consistency) / 3.0
@@ -89,15 +115,23 @@ class SelfSupervisedLoss(nn.Module):
                 
             has_loss_components = True
             loss_dict['consistency_loss'] = consistency.item()
+            logger.debug(f"SelfSupervisedLoss::forward - Added consistency loss: {consistency.item()} * weight {self.consistency_weight} = {(self.consistency_weight * consistency).item()}")
+        else:
+            logger.debug("SelfSupervisedLoss::forward - Skipping consistency loss - required keys not found in outputs")
         
         # Future prediction loss (if available)
         if 'future_prediction' in outputs and batch.get('future_features') is not None:
             future_pred = outputs['future_prediction']  # Expected shape [B, 3*embed_dim]
             future_target = batch['future_features']    # Target future features
             
+            # Log future prediction tensors
+            logger.debug(f"SelfSupervisedLoss::forward - Future prediction shapes - pred: {future_pred.shape}, target: {future_target.shape}")
+            logger.debug(f"SelfSupervisedLoss::forward - Future pred stats: min={future_pred.min().item()}, max={future_pred.max().item()}, mean={future_pred.mean().item()}")
+            logger.debug(f"SelfSupervisedLoss::forward - Future target stats: min={future_target.min().item()}, max={future_target.max().item()}, mean={future_target.mean().item()}")
+            
             # Add debugging information for dimension mismatches
             if future_pred.size(1) != future_target.size(1):
-                logger.info(f"Future prediction dimension mismatch - pred: {future_pred.shape}, target: {future_target.shape}")
+                logger.debug(f"SelfSupervisedLoss::forward - Future prediction dimension mismatch - pred: {future_pred.shape}, target: {future_target.shape}")
             
             # Handle dimension mismatch - initialize projection layer if needed
             if self.future_projection is None and future_pred.size(1) != future_target.size(1):
@@ -107,13 +141,13 @@ class SelfSupervisedLoss(nn.Module):
                 # Initialize projection with small weights for stability
                 nn.init.xavier_uniform_(self.future_projection.weight, gain=0.01)
                 nn.init.zeros_(self.future_projection.bias)
-                print(f"Created projection layer from {input_dim} to {output_dim} features")
-                print(f"This is expected if the model architecture has changed. The projection layer adapts the")
-                print(f"future prediction output dimensions to match the expected target dimensions.")
+                logger.debug(f"SelfSupervisedLoss::forward - Created projection layer from {input_dim} to {output_dim} features")
             
             # Apply projection if needed
             if self.future_projection is not None:
                 future_pred = self.future_projection(future_pred)
+                logger.debug(f"SelfSupervisedLoss::forward - Applied projection layer. New future_pred shape: {future_pred.shape}")
+                logger.debug(f"SelfSupervisedLoss::forward - Projected future pred stats: min={future_pred.min().item()}, max={future_pred.max().item()}, mean={future_pred.mean().item()}")
             
             # Now compute the loss with matching dimensions
             future_loss = self.future_prediction_loss(future_pred, future_target)
@@ -125,29 +159,40 @@ class SelfSupervisedLoss(nn.Module):
                 
             has_loss_components = True
             loss_dict['future_prediction_loss'] = future_loss.item()
+            logger.debug(f"SelfSupervisedLoss::forward - Added future prediction loss: {future_loss.item()} * weight {self.future_weight} = {(self.future_weight * future_loss).item()}")
+        else:
+            logger.debug("SelfSupervisedLoss::forward - Skipping future prediction loss - required keys not found")
         
         # If no loss components were added, create a dummy loss with gradients
         if not has_loss_components:
+            logger.debug("SelfSupervisedLoss::forward - WARNING: No loss components were added. Creating dummy loss.")
             # Create a dummy loss that's connected to the computation graph
             # Get any tensor from outputs to create a proper loss with gradients
             for key, value in outputs.items():
                 if isinstance(value, torch.Tensor) and value.requires_grad:
                     # Create a zero loss that's connected to the graph
                     total_loss = 0.0 * torch.sum(value)
+                    logger.debug(f"SelfSupervisedLoss::forward - Created dummy loss from tensor key: {key}")
                     break
             
             # If we still don't have a valid loss (no gradable tensors found)
             if total_loss is None:
-                print("WARNING: No loss components found and no gradable tensors in outputs. Training may fail.")
+                logger.debug("SelfSupervisedLoss::forward - WARNING: No loss components found and no gradable tensors in outputs. Training may fail.")
                 # Last resort: create a new parameter and use it for loss
                 dummy_param = nn.Parameter(torch.tensor([0.0], device=self._get_device(outputs)))
                 total_loss = 0.0 * dummy_param.sum()
+                logger.debug("SelfSupervisedLoss::forward - Created emergency dummy loss with parameter")
         
         # Record total loss for logging
         if isinstance(total_loss, torch.Tensor):
             loss_dict['total_loss'] = total_loss.item()
+            logger.debug(f"SelfSupervisedLoss::forward - Final total loss: {total_loss.item()}")
+            # Check if the loss is zero or extremely small
+            if abs(total_loss.item()) < 1e-8:
+                logger.debug("SelfSupervisedLoss::forward - WARNING: Total loss is effectively zero!")
         else:
             loss_dict['total_loss'] = float(total_loss) if total_loss is not None else 0.0
+            logger.debug(f"SelfSupervisedLoss::forward - Final total loss (non-tensor): {loss_dict['total_loss']}")
             
         return total_loss, loss_dict
     

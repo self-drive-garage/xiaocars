@@ -370,9 +370,9 @@ class ModularVisionTransformer(nn.Module):
         
         # Future prediction head
         self.future_prediction_head = MotionGuidedFuturePredictor(
-            embed_dim=embed_dim,
-            ego_motion_dim=ego_motion_dim,
-            dropout=dropout
+            embed_dim,
+            num_heads,
+            dropout
         )
         
         # Image reconstruction decoder
@@ -388,7 +388,7 @@ class ModularVisionTransformer(nn.Module):
         self.in_chans = in_chans
         self.embed_dim = embed_dim
     
-    def forward(self, batch, task='drivable_space'):
+    def forward(self, batch, task='all'):
         """
         Args:
             batch: Dictionary with:
@@ -409,7 +409,6 @@ class ModularVisionTransformer(nn.Module):
         logger.debug(f"ego_motion shape: {ego_motion.shape}, dtype: {ego_motion.dtype}")
         
         B, T, C, H, W = left_imgs.shape
-        
  
         # Process ego motion one frame at a time to avoid shape mismatch
         ego_features_list = []
@@ -498,14 +497,11 @@ class ModularVisionTransformer(nn.Module):
         outputs = {}
         
         if task == 'drivable_space' or task == 'all':
-            # Extract motion context for drivable space prediction
-            if ego_motion is not None:
-                # Use the last timestamp's ego motion as context
-                motion_context = ego_motion[:, -1]  # [B, ego_motion_dim]
-                # Encode it to feature space using encode_frame which handles 2D input correctly
-                motion_context = self.ego_motion_encoder.encode_frame(motion_context)  # [B, embed_dim]
-            else:
-                motion_context = None
+         
+            # Use the last timestamp's ego motion as context
+            motion_context = ego_motion[:, -1]  # [B, ego_motion_dim]
+            # Encode it to feature space using encode_frame which handles 2D input correctly
+            motion_context = self.ego_motion_encoder.encode_frame(motion_context)  # [B, embed_dim]
             
             # Use center camera view for drivable space prediction with motion context
             # Skip the CLS token for patch-based prediction
@@ -561,14 +557,7 @@ class ModularVisionTransformer(nn.Module):
         
         if task == 'future_prediction' or task == 'all':
             # Enhanced future prediction with motion guidance
-            if ego_motion is not None:
-                # Use the enhanced future predictor that incorporates ego motion
-                future_prediction = self.future_prediction_head(cls_features, ego_motion)  # [B, 3*D]
-            else:
-                # Fallback to simple prediction if no ego motion data
-                # Create a zero tensor matching the ego_motion_dim size
-                zeros = torch.zeros_like(cls_features[:, :, :ego_motion.shape[-1]])
-                future_prediction = self.future_prediction_head(cls_features, zeros)
+            future_prediction = self.future_prediction_head(cls_features)  # [B, 3*D]
             
             outputs['future_prediction'] = future_prediction
         

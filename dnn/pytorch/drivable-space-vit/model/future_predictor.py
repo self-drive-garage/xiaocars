@@ -9,26 +9,18 @@ class MotionGuidedFuturePredictor(nn.Module):
     def __init__(
         self,
         embed_dim,
-        ego_motion_dim=9,  # Updated from 15 to 9 (3 velocity + 3 acceleration + 3 angular velocity)
-        num_heads=8,
-        dropout=0.1,
+        num_heads,
+        dropout,
     ):
         super().__init__()
         
         # Reduce internal dimensions to save memory
         self.embed_dim = embed_dim
-        self.ego_motion_dim = ego_motion_dim
+        self.input_dim = 3 * embed_dim
         self.internal_dim = embed_dim // 2  # Use half the dimension for internal processing
         
-        # Transform ego motion to feature space (with reduced dimensions)
-        self.motion_transform = nn.Sequential(
-            nn.Linear(ego_motion_dim, self.internal_dim),
-            nn.GELU(),
-            nn.Dropout(dropout),
-        )
-        
         # Reduce input features dimension
-        self.input_reduction = nn.Linear(embed_dim, self.internal_dim)
+        self.input_reduction = nn.Linear(self.input_dim, self.internal_dim)
         
         # Simpler attention mechanism with fewer heads and smaller dimensions
         num_reduced_heads = max(1, num_heads // 2)  # At least 1 head
@@ -55,7 +47,7 @@ class MotionGuidedFuturePredictor(nn.Module):
         # Final projection back to original dimension
         self.projection = nn.Linear(self.internal_dim, embed_dim)
     
-    def forward(self, features, ego_motion):
+    def forward(self, features):
         """
         Predict future features based on current features and ego motion
         
@@ -72,27 +64,23 @@ class MotionGuidedFuturePredictor(nn.Module):
         # Reduce feature dimensions
         features = self.input_reduction(features)  # (B, T, E/2)
         
-        # Transform ego motion to feature space
-        motion_features = self.motion_transform(ego_motion)  # (B, T, E/2)
-        
-        # Combine features and motion instead of using expensive cross-attention
-        combined_features = features + motion_features
-        combined_features = self.norm1(combined_features)
+        # Normalize features
+        features = self.norm1(features)
         
         # Self-attention on combined features
         attn_output, _ = self.self_attention(
-            query=combined_features,
-            key=combined_features,
-            value=combined_features
+            query=features,
+            key=features,
+            value=features
         )
-        combined_features = combined_features + attn_output
-        combined_features = self.norm2(combined_features)
+        features = features + attn_output
+        features = self.norm2(features)
         
         # Feed-forward network
-        combined_features = combined_features + self.ffn(combined_features)
+        features = features + self.ffn(features)
         
         # Take the last time step as future prediction
-        future_features = combined_features[:, -1]  # (B, E/2)
+        future_features = features[:, -1]  # (B, E/2)
         
         # Project back to original dimension
         future_features = self.projection(future_features)  # (B, E)
