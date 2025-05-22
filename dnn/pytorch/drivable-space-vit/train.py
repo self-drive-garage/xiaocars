@@ -524,23 +524,23 @@ def create_fsdp_model(cfg):
         torch.set_default_dtype(torch.float32)
     
     # 5. Configure sharding strategy based on zero_stage
-    sharding_strategy = ShardingStrategy.SHARD_GRAD_OP  # Default to ZeRO-2 equivalent
+    sharding_strategy = ShardingStrategy.FULL_SHARD  # Default to ZeRO-2 equivalent
 
     # 6. Disable CPU offloading
     cpu_offload = None
 
     # Configure backward prefetch
-    backward_prefetch = BackwardPrefetch.BACKWARD_PRE  # Default
-    if hasattr(cfg.training, 'fsdp_backward_prefetch'):
-        if cfg.training.fsdp_backward_prefetch == "BACKWARD_POST":
-            backward_prefetch = BackwardPrefetch.BACKWARD_POST
-        elif cfg.training.fsdp_backward_prefetch == "BACKWARD_PRE":
-            backward_prefetch = BackwardPrefetch.BACKWARD_PRE
+    backward_prefetch = BackwardPrefetch.BACKWARD_POST  # Default
+    # if hasattr(cfg.training, 'fsdp_backward_prefetch'):
+    #     if cfg.training.fsdp_backward_prefetch == "BACKWARD_POST":
+    #         backward_prefetch = BackwardPrefetch.BACKWARD_POST
+    #     elif cfg.training.fsdp_backward_prefetch == "BACKWARD_PRE":
+    #         backward_prefetch = BackwardPrefetch.BACKWARD_PRE
     
     # Configure use_orig_params
-    use_orig_params = False
-    if hasattr(cfg.training, 'fsdp_use_orig_params'):
-        use_orig_params = cfg.training.fsdp_use_orig_params
+    # use_orig_params = False
+    # if hasattr(cfg.training, 'fsdp_use_orig_params'):
+    #     use_orig_params = cfg.training.fsdp_use_orig_params
     
     # Create FSDP config
     fsdp_config = {
