@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from .fsdp_compatible_multihead_attetion import FSDPCompatibleMultiheadAttention
 
 def get_default_config():
     """Return default configuration parameters for TemporalTransformerLayer"""
@@ -42,7 +43,7 @@ class TemporalTransformerLayer(nn.Module):
         self.norm2 = nn.LayerNorm(dim)
         
         # Temporal self-attention
-        self.attn = nn.MultiheadAttention(
+        self.attn = FSDPCompatibleMultiheadAttention(
             embed_dim=dim,
             num_heads=num_heads,
             dropout=attn_dropout_value,

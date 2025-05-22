@@ -39,7 +39,6 @@ from model.modular_vision_transformer import (
 
 from utils.train_utils import (
     seed_everything,
-    inspect_multihead_attention_modules,
 )
 
 from utils.validate import validate
@@ -415,19 +414,6 @@ def create_fsdp_model(cfg):
         for info in module_info:
             logger.info(info)
     
-    # Verify MultiheadAttention module shapes before FSDP wrapping if debug is enabled
-    if dist.get_rank() == 0 and hasattr(cfg.training, 'debug') and cfg.training.debug:  # Only on rank 0 with debug enabled
-        # Use the utility function to inspect MultiheadAttention modules
-        attn_info, found_modules = inspect_multihead_attention_modules(base_model, logger)
-        
-        if found_modules:
-            # Raise exception to be visible in logs if needed
-            try:
-                raise ValueError("\n".join(attn_info))
-            except ValueError as e:
-                logger.error(str(e))
-                # Uncomment to abort on attention issues:
-                # raise e
     
     # Configure FSDP options
     
@@ -445,14 +431,10 @@ def create_fsdp_model(cfg):
         DrivableSpaceDecoder,
         MotionGuidedFuturePredictor,
         
-        # PyTorch built-ins
-        # torch.nn.Linear,
-        # torch.nn.Sequential,
-        # torch.nn.MultiheadAttention,  # Explicitly include MultiheadAttention for proper wrapping
+        
     }
     
-    # Include MultiheadAttention in the wrapping policy to ensure consistent handling
-    
+
     # 2. Create auto wrapping policy
     auto_wrap_policy = functools.partial(
         transformer_auto_wrap_policy,
@@ -468,9 +450,7 @@ def create_fsdp_model(cfg):
                                  min_params=MIN_PARAMS_SIZE, **kwargs):
         """Custom policy combining transformer layers and size-based policies"""
 
-        # Skip wrapping if module is or contains MultiheadAttention
-        if isinstance(module, torch.nn.MultiheadAttention) or any(isinstance(m, torch.nn.MultiheadAttention) for m in module.modules()):
-            return False
+       
     
         # Use whichever parameter is provided
         param_size = unwrapped_params if unwrapped_params is not None else nonwrapped_numel

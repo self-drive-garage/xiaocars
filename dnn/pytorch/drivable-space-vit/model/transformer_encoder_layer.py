@@ -2,6 +2,10 @@ import torch
 import torch.nn as nn
 import logging
 from utils.train_utils import debug_attention_forward
+import torch
+import torch.nn as nn
+import logging
+from .fsdp_compatible_multihead_attetion import FSDPCompatibleMultiheadAttention
 
 # Get logger
 logger = logging.getLogger(__name__)
@@ -45,9 +49,9 @@ class TransformerEncoderLayer(nn.Module):
         self.norm2 = nn.LayerNorm(dim)
         
         # Multi-head self-attention
-        self.attn = nn.MultiheadAttention(
-            dim,
-            num_heads,
+        self.attn = FSDPCompatibleMultiheadAttention(
+            embed_dim=dim,
+            num_heads=num_heads,
             dropout=attn_dropout_value,
             batch_first=True
         )

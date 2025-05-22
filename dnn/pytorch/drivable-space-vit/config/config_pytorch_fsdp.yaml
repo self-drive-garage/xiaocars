@@ -20,7 +20,7 @@ model:
 dataset:
   data_dir: "datasets/argoversev2"
   seq_len: 3
-  batch_size: 1
+  batch_size: 2
   num_workers: 4
   random_sequence: false
   cache_images: false
@@ -53,7 +53,7 @@ training:
   consistency_weight: 1.0
   future_weight: 1.0
   
-  mixed_precision: false
+  mixed_precision: true
   gradient_accumulation: 8
   gradient_clipping: 1.0
   
@@ -65,7 +65,7 @@ training:
   fsdp_state_dict_type: "SHARDED_STATE_DICT"
   
   # Memory optimizations
-  activation_checkpointing: true
+  activation_checkpointing: false
   
   # Debugging options
   debug: true  # Enable model inspection and detailed diagnostics

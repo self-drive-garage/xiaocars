@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from .fsdp_compatible_multihead_attetion import FSDPCompatibleMultiheadAttention
 
 class MotionGuidedFuturePredictor(nn.Module):
     """
@@ -24,7 +25,7 @@ class MotionGuidedFuturePredictor(nn.Module):
         
         # Simpler attention mechanism with fewer heads and smaller dimensions
         num_reduced_heads = max(1, num_heads // 2)  # At least 1 head
-        self.self_attention = nn.MultiheadAttention(
+        self.self_attention = FSDPCompatibleMultiheadAttention(
             embed_dim=self.internal_dim,
             num_heads=num_reduced_heads,
             dropout=dropout,
@@ -105,7 +106,7 @@ class MotionSpatialTransformer(nn.Module):
         num_reduced_heads = max(1, num_heads // 2)
         
         # Multi-head self-attention
-        self.attn = nn.MultiheadAttention(
+        self.attn = FSDPCompatibleMultiheadAttention(
             embed_dim=dim,
             num_heads=num_reduced_heads,
             dropout=attn_dropout,
