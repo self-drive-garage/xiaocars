@@ -11,7 +11,7 @@ from omegaconf import DictConfig, OmegaConf
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-from model.model import load_model_from_checkpoint
+from model.modular_model import load_model_from_checkpoint
 from model.driving_dataset import DrivingDataset, create_dataloader
 
 # Setup logging

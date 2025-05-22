@@ -549,12 +549,14 @@ def create_fsdp_model(cfg):
         'use_orig_params': True,
         'limit_all_gathers': True,
     }
-    
+
     # Now wrap the entire model with FSDP
     fsdp_model = FSDP(
         base_model,
         **fsdp_config
     )
+
+    # raise RuntimeError(f">>>>>>>> just before wrapping {base_model.spatial_transformer.transformer_layers[0].attn.out_proj.weight.shape}")
     
     # Apply activation checkpointing if needed
     use_activation_checkpointing = cfg.training.get('activation_checkpointing', False)

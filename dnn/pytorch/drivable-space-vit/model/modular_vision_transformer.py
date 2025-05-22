@@ -28,7 +28,7 @@ class SpatialTransformerModule(nn.Module):
         mlp_ratio,
         dropout,
         attn_dropout,
-        ego_motion_dim
+        config
     ):
         super().__init__()
         
@@ -65,7 +65,8 @@ class SpatialTransformerModule(nn.Module):
                 num_heads=num_heads,
                 mlp_ratio=mlp_ratio,
                 dropout=dropout,
-                attn_dropout=attn_dropout
+                attn_dropout=attn_dropout,
+                config=config
             )
             for _ in range(num_layers)
         ])
@@ -143,8 +144,9 @@ class SpatialTransformerModule(nn.Module):
         x = torch.cat([cls_token, x], dim=1)  # [B, 1+N, D]
         logger.debug(f"After adding CLS token shape: {x.shape}")
         
-        x = x + motion_features
-    
+        # Update CLS token with motion information
+        x[:, 0] = x[:, 0] + motion_features  # Add motion to CLS token only
+        
         # Apply transformer layers
         logger.debug(f"Before transformer layers, x shape: {x.shape}")
         for i, layer in enumerate(self.transformer_layers):
@@ -317,7 +319,8 @@ class ModularVisionTransformer(nn.Module):
         mlp_ratio,
         dropout,
         attn_dropout,
-        ego_motion_dim
+        ego_motion_dim,
+        config
     ):
         super().__init__()
         
@@ -339,7 +342,7 @@ class ModularVisionTransformer(nn.Module):
             mlp_ratio=mlp_ratio,
             dropout=dropout,
             attn_dropout=attn_dropout,
-            ego_motion_dim=ego_motion_dim
+            config=config
         )
         
         # Cross-view transformer
@@ -453,22 +456,14 @@ class ModularVisionTransformer(nn.Module):
             logger.debug(f"ego_features_t for frame {t} shape: {ego_features_t.shape}, dtype: {ego_features_t.dtype}")
             
             # Process each view with spatial transformer
-            try:
-                logger.debug(f"Calling spatial_transformer with left_frame shape: {left_frame.shape}")
-                logger.debug(f"ego_features_t shape: {ego_features_t.shape}, dtype: {ego_features_t.dtype}, ndim: {ego_features_t.ndim}")
-                
-                left_features = self.spatial_transformer(left_frame, ego_features_t)  # [B, 1+N, D]
-                logger.debug(f"left_features after spatial_transformer: {left_features.shape}")
-                
-                center_features = self.spatial_transformer(center_frame, ego_features_t)  # [B, 1+N, D]
-                right_features = self.spatial_transformer(right_frame, ego_features_t)  # [B, 1+N, D]
-            except Exception as e:
-                logger.error(f"Error in spatial_transformer processing frame {t}: {str(e)}")
-                if ego_features_t is not None:
-                    logger.error(f"ego_features_t details: shape={ego_features_t.shape}, dtype={ego_features_t.dtype}, ndim={ego_features_t.ndim}")
-                    # Log a sample of the tensor values to check for NaNs or other issues
-                    logger.error(f"ego_features_t sample values: {ego_features_t.flatten()[:5]}")
-                raise
+            logger.debug(f"Calling spatial_transformer with left_frame shape: {left_frame.shape}")
+            logger.debug(f"ego_features_t shape: {ego_features_t.shape}, dtype: {ego_features_t.dtype}, ndim: {ego_features_t.ndim}")
+            
+            left_features = self.spatial_transformer(left_frame, ego_features_t)  # [B, 1+N, D]
+            logger.debug(f"left_features after spatial_transformer: {left_features.shape}")
+            
+            center_features = self.spatial_transformer(center_frame, ego_features_t)  # [B, 1+N, D]
+            right_features = self.spatial_transformer(right_frame, ego_features_t) 
             
             # Fuse views with cross-view transformer
             left_fused, center_fused, right_fused = self.cross_view_transformer(

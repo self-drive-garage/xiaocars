@@ -88,7 +88,8 @@ def create_modular_model(
         mlp_ratio=mlp_ratio,
         dropout=dropout,
         attn_dropout=attn_dropout,
-        ego_motion_dim=ego_motion_dim
+        ego_motion_dim=ego_motion_dim,
+        config=config
     )
     
     return model

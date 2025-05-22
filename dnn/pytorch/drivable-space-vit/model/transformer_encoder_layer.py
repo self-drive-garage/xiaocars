@@ -46,10 +46,10 @@ class TransformerEncoderLayer(nn.Module):
         
         # Multi-head self-attention
         self.attn = nn.MultiheadAttention(
-            embed_dim=dim,
-            num_heads=num_heads,
+            dim,
+            num_heads,
             dropout=attn_dropout_value,
-            batch_first=True,
+            batch_first=True
         )
         
         # MLP block
@@ -80,6 +80,7 @@ class TransformerEncoderLayer(nn.Module):
         try:
             # Log shape right before attention call
             logger.debug(f"About to call attention with input shape: {x.shape}")
+            
             x, _ = self.attn(x, x, x, attn_mask=attn_mask, need_weights=False)
             logger.debug(f"Attention output shape: {x.shape}")
         except Exception as e:
