@@ -73,6 +73,14 @@ os.environ["TORCH_NCCL_TRACE_BUFFER_SIZE"] = "8388608"  # 8MB for debug traces
 os.environ["NCCL_SOCKET_IFNAME"] = "^lo,docker"  # Avoid loopback and docker interfaces
 os.environ["NCCL_IB_DISABLE"] = "1"  # Disable InfiniBand transport
 os.environ["NCCL_P2P_DISABLE"] = "1"  # Disable P2P transfers that might cause issues
+
+# NCCL settings for improved stability
+os.environ["NCCL_TIMEOUT"] = "1800"  # 30 minute timeout (in seconds)
+os.environ["NCCL_ASYNC_ERROR_HANDLING"] = "1"  # Enable async error handling
+os.environ["NCCL_BLOCKING_WAIT"] = "1"  # Use blocking wait which can be more stable
+os.environ["NCCL_CHECK_POINTERS"] = "1"  # Enable pointer checking for better error detection
+
+# Advanced memory optimization
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,garbage_collection_threshold:0.8,roundup_power2_divisions:[1024:4,>:8]"  # Advanced memory optimization
 
 
@@ -357,7 +365,12 @@ def init_distributed_training(cfg):
     
     # Initialize process group if not already initialized
     if not torch.distributed.is_initialized():
-        torch.distributed.init_process_group(backend="nccl")
+        # Set a long timeout for collective operations (30 minutes = 1800 seconds)
+        timeout = datetime.timedelta(seconds=1800)
+        torch.distributed.init_process_group(backend="nccl", timeout=timeout)
+        logger.info(f"Initialized process group with timeout: {timeout}")
+    else:
+        logger.info("Process group already initialized")
     
     # Get rank and world size
     rank = torch.distributed.get_rank()
@@ -552,7 +565,7 @@ def create_fsdp_model(cfg):
         'device_id': torch.cuda.current_device(),
         'use_orig_params': True,
         'limit_all_gathers': True,
-        # 'patch_pytorch_multihead_attention': True,  # Add this line
+       
     }
 
     # Now wrap the entire model with FSDP
@@ -561,8 +574,6 @@ def create_fsdp_model(cfg):
         **fsdp_config
     )
 
-    # raise RuntimeError(f">>>>>>>> just before wrapping {base_model.spatial_transformer.transformer_layers[0].attn.out_proj.weight.shape}")
-    
     # Apply activation checkpointing if needed
     use_activation_checkpointing = cfg.training.get('activation_checkpointing', False)
     if use_activation_checkpointing:
