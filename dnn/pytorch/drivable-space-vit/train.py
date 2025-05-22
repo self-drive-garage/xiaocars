@@ -65,8 +65,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Set DEBUG level for our custom modules to capture detailed tensor shapes
-logging.getLogger('model').setLevel(logging.DEBUG)
-logging.getLogger('utils').setLevel(logging.DEBUG)
+logging.getLogger('model').setLevel(logging.INFO)
+logging.getLogger('utils').setLevel(logging.INFO)
 
 os.environ["NCCL_DEBUG"] = "INFO"
 os.environ["TORCH_NCCL_TRACE_BUFFER_SIZE"] = "8388608"  # 8MB for debug traces
@@ -455,6 +455,11 @@ def create_fsdp_model(cfg):
     def combined_auto_wrap_policy(module, recurse, unwrapped_params=None, nonwrapped_numel=None, 
                                  min_params=MIN_PARAMS_SIZE, **kwargs):
         """Custom policy combining transformer layers and size-based policies"""
+
+        # Skip wrapping if module is or contains MultiheadAttention
+        if isinstance(module, torch.nn.MultiheadAttention) or any(isinstance(m, torch.nn.MultiheadAttention) for m in module.modules()):
+            return False
+    
         # Use whichever parameter is provided
         param_size = unwrapped_params if unwrapped_params is not None else nonwrapped_numel
         
@@ -548,6 +553,7 @@ def create_fsdp_model(cfg):
         'device_id': torch.cuda.current_device(),
         'use_orig_params': True,
         'limit_all_gathers': True,
+        # 'patch_pytorch_multihead_attention': True,  # Add this line
     }
 
     # Now wrap the entire model with FSDP

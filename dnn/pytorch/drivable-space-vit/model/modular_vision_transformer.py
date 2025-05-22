@@ -223,12 +223,7 @@ class CrossViewTransformerModule(nn.Module):
         left_fused, center_fused, right_fused = left_features, center_features, right_features
         
         for layer in self.transformer_layers:
-            # Fuse left and center views
-            left_fused, center_fused = layer(left_fused, center_fused)
-            # Fuse center and right views
-            center_fused, right_fused = layer(center_fused, right_fused)
-            # Fuse right and left views to complete the cycle
-            right_fused, left_fused = layer(right_fused, left_fused)
+            left_fused, center_fused, right_fused = layer(left_fused, center_fused, right_fused)
         
         # Apply layer norm
         left_fused = self.norm_left(left_fused)
