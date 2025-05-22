@@ -254,6 +254,8 @@ class DrivingDataset(Dataset):
                 self.ego_motion_mean = (local_mean / local_count.item()).cpu()
                 self.ego_motion_std = (local_std / local_count.item()).cpu()
                 self.ego_motion_std = torch.where(self.ego_motion_std == 0, torch.ones_like(self.ego_motion_std), self.ego_motion_std)
+        
+        self.sequences = self.sequences[:150]
     
     def __len__(self):
         return len(self.sequences)

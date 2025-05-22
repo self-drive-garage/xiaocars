@@ -207,7 +207,7 @@ def load_model_from_checkpoint(checkpoint_path, device='cuda', config=None):
     """
     Load model from checkpoint
     """
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     
     # Create model with the same configuration as saved
     model_config = checkpoint.get('model_config', {})

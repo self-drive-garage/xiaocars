@@ -334,13 +334,12 @@ def main(cfg: DictConfig):
             visualize_dir = output_dir / 'visualizations' / f"epoch_{epoch}"
             visualize_dir.mkdir(parents=True, exist_ok=True)
             visualize_predictions(
-                model=model,
-                val_loader=val_loader,
-                epoch=epoch,
-                num_samples=cfg.logging.num_viz_samples,
-                output_dir=str(visualize_dir),
-                device=f"cuda:{local_rank}",
-                cfg=OmegaConf.to_container(cfg, resolve=True)
+                model,
+                val_loader,
+                epoch,
+                cfg.logging.num_viz_samples,
+                str(visualize_dir),
+                f"cuda:{local_rank}"
             )
     
     # Final cleanup

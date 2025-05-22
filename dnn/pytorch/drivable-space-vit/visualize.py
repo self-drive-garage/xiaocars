@@ -229,11 +229,7 @@ def main():
     data_loader = create_dataloader(
         dataset,
         batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        shuffle=False,  # Don't shuffle for consistent visualizations
-        sampler=None,
-        config=config,
-        debug=False
+        num_workers=args.num_workers
     )
     
     # Run visualization
