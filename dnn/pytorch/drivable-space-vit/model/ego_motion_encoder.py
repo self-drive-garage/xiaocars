@@ -71,29 +71,29 @@ class EgoMotionEncoder(nn.Module):
         )
         
     def forward(self, x):
-        # x shape: (batch_size, seq_len, ego_motion_dim)
-        B, T, D = x.shape
+        # x shape: (batch_size, ego_motion_dim)
+        B, D = x.shape
         
         # Split into components based on new structure
-        velocity = x[:, :, 0:3]        # x, y, z velocity - shape: (B, T, 3)
-        acceleration = x[:, :, 3:6]    # x, y, z acceleration - shape: (B, T, 3)
-        angular_vel = x[:, :, 6:9]     # x, y, z angular velocity - shape: (B, T, 3)
+        velocity = x[:, 0:3]        # x, y, z velocity - shape: (B, 3)
+        acceleration = x[:, 3:6]    # x, y, z acceleration - shape: (B, 3)
+        angular_vel = x[:, 6:9]     # x, y, z angular velocity - shape: (B, 3)
         
         # Process each component directly - nn.Linear can handle 3D inputs
         # The linear transformation is applied only to the last dimension
-        vel_features = self.velocity_encoder(velocity)  # shape: (B, T, feature_dim)
-        accel_features = self.accel_encoder(acceleration)  # shape: (B, T, feature_dim)
-        ang_vel_features = self.angular_vel_encoder(angular_vel)  # shape: (B, T, feature_dim)
+        vel_features = self.velocity_encoder(velocity)  # shape: (B, feature_dim)
+        accel_features = self.accel_encoder(acceleration)  # shape: (B, feature_dim)
+        ang_vel_features = self.angular_vel_encoder(angular_vel)  # shape: (B, feature_dim)
         
         # Concatenate only the real features
         combined = torch.cat([
             accel_features, 
             vel_features, 
             ang_vel_features
-        ], dim=-1)  # shape: (B, T, 3*feature_dim)
+        ], dim=-1)  # shape: (B, 3*feature_dim)
         
         # Final projection
-        output = self.dynamics_encoder(combined)  # shape: (B, T, embed_dim)
+        output = self.dynamics_encoder(combined)  # shape: (B, embed_dim)
         
         return output
 
@@ -110,16 +110,10 @@ class EgoMotionEncoder(nn.Module):
         # Add debugging for input tensor
         logger.debug(f"encode_frame input shape: {x.shape}, dtype: {x.dtype}")
         
-        # Add sequence dimension if not present
-        if len(x.shape) == 2:
-            x = x.unsqueeze(1)  # (B, 1, D)
-            logger.debug(f"After unsqueeze, x shape: {x.shape}")
-        
         # Process with forward
-        features = self.forward(x)  # (B, 1, E)
+        features = self.forward(x)  # (B, embed_dim)
         
-        # Remove sequence dimension
-        return features.squeeze(1)  # (B, E)
+        return features
     
 class MotionGuidedAttention(nn.Module):
     """Attention module that uses ego motion to guide visual attention"""

@@ -31,20 +31,11 @@ class TransformerEncoderLayer(nn.Module):
         default_config = get_default_config()
         
         # Use provided config if available
-        model_config = {}
-        training_config = {}
-        if config is not None:
-            if 'model' in config:
-                model_config = config['model']
-            if 'training' in config:
-                training_config = config['training']
+        model_config = config['model']
         
-        # Store debug flag
-        self.debug_mode = training_config.get('debug', False)
-        
-        # Use provided parameters if given, otherwise use config, fallback to defaults
         self.dim = dim
         self.num_heads = num_heads
+
         mlp_ratio_value = mlp_ratio if mlp_ratio is not None else model_config.get('mlp_ratio', default_config['mlp_ratio'])
         dropout_value = dropout if dropout is not None else model_config.get('dropout', default_config['dropout'])
         attn_dropout_value = attn_dropout if attn_dropout is not None else model_config.get('attn_dropout', default_config['attn_dropout'])

@@ -15,26 +15,20 @@ from .future_predictor import MotionGuidedFuturePredictor
 # Get logger
 logger = logging.getLogger(__name__)
 
-"""
-This is a complete redesign of the vision transformer model architecture
-to be optimally compatible with PyTorch's Fully Sharded Data Parallel (FSDP).
-The model is split into discrete components that can be independently sharded.
-"""
-
 class SpatialTransformerModule(nn.Module):
     """Spatial transformer module for processing individual views"""
     def __init__(
         self,
-        img_size=224,
-        patch_size=16,
-        in_chans=3,
-        embed_dim=768,
-        num_layers=4,
-        num_heads=12,
-        mlp_ratio=4,
-        dropout=0.1,
-        attn_dropout=0.1,
-        ego_motion_dim=9
+        img_size,
+        patch_size,
+        in_chans,
+        embed_dim,
+        num_layers,
+        num_heads,
+        mlp_ratio,
+        dropout,
+        attn_dropout,
+        ego_motion_dim
     ):
         super().__init__()
         
@@ -63,13 +57,7 @@ class SpatialTransformerModule(nn.Module):
         pos_embed = self._get_sincos_pos_embed(embed_dim, int(img_size / patch_size))
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
         
-        # Ego motion conditioning
-        self.motion_conditioning = nn.Sequential(
-            nn.Linear(embed_dim, embed_dim),
-            nn.GELU(),
-            nn.Dropout(dropout)
-        )
-        
+  
         # Transformer layers
         self.transformer_layers = nn.ModuleList([
             TransformerEncoderLayer(
@@ -127,7 +115,7 @@ class SpatialTransformerModule(nn.Module):
         emb = np.concatenate([emb_sin, emb_cos], axis=1)
         return emb
     
-    def forward(self, x, motion_features=None):
+    def forward(self, x, motion_features):
         """
         Args:
             x: Input images [B, C, H, W]
@@ -137,8 +125,7 @@ class SpatialTransformerModule(nn.Module):
         """
         # Add diagnostic logging
         logger.debug(f"SpatialTransformerModule input x shape: {x.shape}, dtype: {x.dtype}")
-        if motion_features is not None:
-            logger.debug(f"motion_features shape: {motion_features.shape}, dtype: {motion_features.dtype}")
+        logger.debug(f"motion_features shape: {motion_features.shape}, dtype: {motion_features.dtype}")
         
         B = x.shape[0]
         
@@ -156,32 +143,8 @@ class SpatialTransformerModule(nn.Module):
         x = torch.cat([cls_token, x], dim=1)  # [B, 1+N, D]
         logger.debug(f"After adding CLS token shape: {x.shape}")
         
-        # Add motion features if provided
-        if motion_features is not None:
-            try:
-                # Transform ego features for conditioning
-                logger.debug(f"Processing motion_features: {motion_features.shape}")
-                
-                # Check for unexpected 1D tensors
-                if motion_features.dim() == 1:
-                    logger.warning(f"WARNING: motion_features is 1D with shape {motion_features.shape}, expected 2D [B, D]")
-                    # Attempt to fix by unsqueezing
-                    motion_features = motion_features.unsqueeze(0)
-                    logger.warning(f"After unsqueeze: {motion_features.shape}")
-                
-                motion_cond = self.motion_conditioning(motion_features)  # [B, D]
-                logger.debug(f"motion_cond shape after conditioning: {motion_cond.shape}")
-                
-                # Add motion features to all patches including CLS token
-                motion_cond = motion_cond.unsqueeze(1)  # [B, 1, D]
-                logger.debug(f"motion_cond shape after unsqueeze: {motion_cond.shape}")
-                x = x + motion_cond  # [B, 1+N, D]
-                logger.debug(f"x shape after adding motion_cond: {x.shape}")
-            except Exception as e:
-                logger.error(f"Error in motion feature processing: {str(e)}")
-                logger.error(f"motion_features: shape={motion_features.shape}, dtype={motion_features.dtype}, ndim={motion_features.ndim}")
-                raise
-        
+        x = x + motion_features
+    
         # Apply transformer layers
         logger.debug(f"Before transformer layers, x shape: {x.shape}")
         for i, layer in enumerate(self.transformer_layers):
@@ -343,18 +306,18 @@ class ModularVisionTransformer(nn.Module):
     """
     def __init__(
         self,
-        img_size=224,
-        patch_size=16,
-        in_chans=3,
-        embed_dim=768,
-        spatial_layers=4,
-        cross_view_layers=4,
-        temporal_layers=4,
-        num_heads=12,
-        mlp_ratio=4,
-        dropout=0.1,
-        attn_dropout=0.1,
-        ego_motion_dim=9
+        img_size,
+        patch_size,
+        in_chans,
+        embed_dim,
+        spatial_layers,
+        cross_view_layers,
+        temporal_layers,
+        num_heads,
+        mlp_ratio,
+        dropout,
+        attn_dropout,
+        ego_motion_dim
     ):
         super().__init__()
         
@@ -442,38 +405,35 @@ class ModularVisionTransformer(nn.Module):
         left_imgs = batch['left_images']  # [B, T, C, H, W]
         center_imgs = batch['center_images']  # [B, T, C, H, W]
         right_imgs = batch['right_images']  # [B, T, C, H, W]
-        ego_motion = batch.get('ego_motion')  # [B, T, ego_motion_dim] or None
+        ego_motion = batch['ego_motion']  # [B, T, ego_motion_dim]
         
         logger.debug(f"ModularVisionTransformer input shapes - left_imgs: {left_imgs.shape}, center_imgs: {center_imgs.shape}, right_imgs: {right_imgs.shape}")
-        if ego_motion is not None:
-            logger.debug(f"ego_motion shape: {ego_motion.shape}, dtype: {ego_motion.dtype}")
+        logger.debug(f"ego_motion shape: {ego_motion.shape}, dtype: {ego_motion.dtype}")
         
         B, T, C, H, W = left_imgs.shape
         
-        # Process ego motion if provided
-        ego_features_seq = None
-        if ego_motion is not None:
-            # Process ego motion one frame at a time to avoid shape mismatch
-            ego_features_list = []
-            for t in range(T):
-                # Process each frame separately
-                motion_frame = ego_motion[:, t]  # [B, ego_motion_dim]
-                logger.debug(f"Processing ego motion frame {t}, shape: {motion_frame.shape}")
-                
-                # Use encode_frame which handles 2D input correctly
-                try:
-                    frame_features = self.ego_motion_encoder.encode_frame(motion_frame)  # [B, embed_dim]
-                    logger.debug(f"Encoded ego motion frame {t}, output shape: {frame_features.shape}")
-                    ego_features_list.append(frame_features)
-                except Exception as e:
-                    logger.error(f"Error encoding ego motion frame {t}: {str(e)}")
-                    logger.error(f"motion_frame: shape={motion_frame.shape}, dtype={motion_frame.dtype}, ndim={motion_frame.ndim}")
-                    raise
+ 
+        # Process ego motion one frame at a time to avoid shape mismatch
+        ego_features_list = []
+        for t in range(T):
+            # Process each frame separately
+            motion_frame = ego_motion[:, t]  # [B, ego_motion_dim]
+            logger.debug(f"Processing ego motion frame {t}, shape: {motion_frame.shape}")
             
-            # Stack all processed features
-            ego_features_seq = torch.stack(ego_features_list, dim=1)  # [B, T, embed_dim]
-            logger.debug(f"Stacked ego_features_seq shape: {ego_features_seq.shape}")
-        
+            # Use encode_frame which handles 2D input correctly
+            try:
+                frame_features = self.ego_motion_encoder.encode_frame(motion_frame)  # [B, embed_dim]
+                logger.debug(f"Encoded ego motion frame {t}, output shape: {frame_features.shape}")
+                ego_features_list.append(frame_features)
+            except Exception as e:
+                logger.error(f"Error encoding ego motion frame {t}: {str(e)}")
+                logger.error(f"motion_frame: shape={motion_frame.shape}, dtype={motion_frame.dtype}, ndim={motion_frame.ndim}")
+                raise
+            
+        # Stack all processed features
+        ego_features_seq = torch.stack(ego_features_list, dim=1)  # [B, T, embed_dim]
+        logger.debug(f"Stacked ego_features_seq shape: {ego_features_seq.shape}")
+    
         # Process each frame in the sequence
         left_features_seq = []
         center_features_seq = []
@@ -489,24 +449,13 @@ class ModularVisionTransformer(nn.Module):
             logger.debug(f"Frame {t} shapes - left: {left_frame.shape}, center: {center_frame.shape}, right: {right_frame.shape}")
             
             # Get ego features for this timestep
-            ego_features_t = None
-            if ego_features_seq is not None:
-                ego_features_t = ego_features_seq[:, t]  # [B, embed_dim]
-                logger.debug(f"ego_features_t for frame {t} shape: {ego_features_t.shape}, dtype: {ego_features_t.dtype}")
-                
-                # Check if ego_features_t has unexpected dimensions
-                if ego_features_t.dim() == 1:
-                    logger.warning(f"WARNING: ego_features_t is 1D with shape {ego_features_t.shape}, expected 2D [B, D]")
-                    logger.warning(f"Original ego_motion shape: {ego_motion.shape}, encoded ego_features_seq shape: {ego_features_seq.shape}")
-                    # Try to fix by unsqueezing
-                    ego_features_t = ego_features_t.unsqueeze(0)
-                    logger.warning(f"After unsqueeze ego_features_t shape: {ego_features_t.shape}")
+            ego_features_t = ego_features_seq[:, t]  # [B, embed_dim]
+            logger.debug(f"ego_features_t for frame {t} shape: {ego_features_t.shape}, dtype: {ego_features_t.dtype}")
             
             # Process each view with spatial transformer
             try:
                 logger.debug(f"Calling spatial_transformer with left_frame shape: {left_frame.shape}")
-                if ego_features_t is not None:
-                    logger.debug(f"ego_features_t shape: {ego_features_t.shape}, dtype: {ego_features_t.dtype}, ndim: {ego_features_t.ndim}")
+                logger.debug(f"ego_features_t shape: {ego_features_t.shape}, dtype: {ego_features_t.dtype}, ndim: {ego_features_t.ndim}")
                 
                 left_features = self.spatial_transformer(left_frame, ego_features_t)  # [B, 1+N, D]
                 logger.debug(f"left_features after spatial_transformer: {left_features.shape}")
