@@ -47,11 +47,11 @@ training:
   beta1: 0.9
   beta2: 0.999
   eps: 1e-8
-  
+
+  temporal_weight: 1.0
   reconstruction_weight: 1.0
-  consistency_weight: 0.5
+  consistency_weight: 1.0
   future_weight: 1.0
-  temporal_weight: 0.5
   
   mixed_precision: false
   gradient_accumulation: 8
