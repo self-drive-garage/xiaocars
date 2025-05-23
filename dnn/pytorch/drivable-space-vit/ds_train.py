@@ -227,7 +227,8 @@ def main(cfg: DictConfig):
             loss_fn=loss_fn,
             epoch=epoch,
             config=OmegaConf.to_container(cfg, resolve=True),
-            rank=rank
+            rank=rank,
+            world_size=world_size
         )
         
         # Ensure all processes are synchronized after validation
@@ -355,7 +356,7 @@ def train_epoch(model_engine, train_loader, loss_fn, epoch, cfg, writer, rank, w
     for batch_idx, batch in enumerate(train_loader):
         # Stop if we've reached the synchronized batch count
         if batch_idx >= total_batches:
-            logger.info(f"Rank {rank}: Stopping at batch {batch_idx} to maintain synchronization")
+        #     logger.info(f"Rank {rank}: Stopping at batch {batch_idx} to maintain synchronization")
             break
             
         # Move data to current device (DeepSpeed handles device placement)
@@ -449,7 +450,7 @@ def train_epoch(model_engine, train_loader, loss_fn, epoch, cfg, writer, rank, w
     
     return avg_loss
 
-def validate_deepspeed(model_engine, loader, loss_fn, epoch, config, rank):
+def validate_deepspeed(model_engine, loader, loss_fn, epoch, config, rank, world_size):
     """Validate model using DeepSpeed engine"""
     if rank == 0:
         logger.info(f"Starting validation for epoch {epoch}")
@@ -461,11 +462,27 @@ def validate_deepspeed(model_engine, loader, loss_fn, epoch, config, rank):
     # Get total batches and synchronize across ranks
     total_batches = len(loader)
     
+    # Synchronize the number of batches across all ranks (same as in training)
+    if world_size > 1:
+        # Get the minimum number of batches across all ranks
+        local_batches = torch.tensor([total_batches], dtype=torch.int32).cuda()
+        torch.distributed.all_reduce(local_batches, op=torch.distributed.ReduceOp.MIN)
+        min_batches = local_batches.item()
+        
+        if total_batches != min_batches:
+            logger.warning(f"Rank {rank}: Validation batch count mismatch! Local: {total_batches}, Global min: {min_batches}")
+            logger.warning(f"Rank {rank}: Will only process {min_batches} batches to maintain synchronization")
+        
+        total_batches = min_batches
+    
+    if rank == 0:
+        logger.info(f"Validation epoch {epoch}: Processing {total_batches} batches")
+    
     with torch.no_grad():
         for batch_idx, batch in enumerate(loader):
             # Stop if we've reached the synchronized batch count
             if batch_idx >= total_batches:
-                logger.info(f"Rank {rank}: Stopping validation at batch {batch_idx} to maintain synchronization")
+                # logger.info(f"Rank {rank}: Stopping validation at batch {batch_idx} to maintain synchronization")
                 break
                 
             # Move data to device
@@ -490,12 +507,12 @@ def validate_deepspeed(model_engine, loader, loss_fn, epoch, config, rank):
             
             # Log progress every 50 batches
             if rank == 0 and (batch_idx + 1) % 50 == 0:
-                logger.info(f"Validation progress: {batch_idx + 1}/{len(loader)} batches")
+                logger.info(f"Validation progress: {batch_idx + 1}/{total_batches} batches")
     
     # Calculate average loss
     avg_loss = total_loss / num_batches if num_batches > 0 else 0
     
-    logger.info(f"Rank {rank}: Completed validation loop, syncing loss...")
+    # logger.info(f"Rank {rank}: Completed validation loop, syncing loss...")
     
     # Synchronize validation loss across processes
     if world_size > 1:
@@ -506,7 +523,7 @@ def validate_deepspeed(model_engine, loader, loss_fn, epoch, config, rank):
     if rank == 0:
         logger.info(f"Epoch {epoch} | Validation Loss: {avg_loss:.6f}")
     
-    logger.info(f"Rank {rank}: Validation complete for epoch {epoch}")
+    # logger.info(f"Rank {rank}: Validation complete for epoch {epoch}")
     
     return avg_loss
 
