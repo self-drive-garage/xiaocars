@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from .fsdp_compatible_multihead_attetion import FSDPCompatibleMultiheadAttention
+from .ds_multihead_attention import DeepSpeedCompatibleMultiheadAttention
 
 def get_default_config():
     """Return default configuration parameters for TemporalTransformerLayer"""

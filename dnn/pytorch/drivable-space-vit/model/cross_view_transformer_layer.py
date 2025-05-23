@@ -1,5 +1,5 @@
 import torch.nn as nn
-from .fsdp_compatible_multihead_attetion import FSDPCompatibleMultiheadAttention
+from .ds_multihead_attention import DeepSpeedCompatibleMultiheadAttention
 
 def get_default_config():
     """Return default configuration parameters for CrossViewTransformerLayer"""
@@ -47,7 +47,7 @@ class CrossViewTransformerLayer(nn.Module):
         
         # Cross-attention between all three views (six directions)
         # Left to Center
-        self.cross_attn_left_to_center = FSDPCompatibleMultiheadAttention(
+        self.cross_attn_left_to_center = DeepSpeedCompatibleMultiheadAttention(
             embed_dim=dim,
             num_heads=num_heads,
             dropout=attn_dropout_value,
@@ -55,7 +55,7 @@ class CrossViewTransformerLayer(nn.Module):
         )
         
         # Left to Right
-        self.cross_attn_left_to_right = FSDPCompatibleMultiheadAttention(
+        self.cross_attn_left_to_right = DeepSpeedCompatibleMultiheadAttention(
             embed_dim=dim,
             num_heads=num_heads,
             dropout=attn_dropout_value,
@@ -63,7 +63,7 @@ class CrossViewTransformerLayer(nn.Module):
         )
         
         # Center to Left
-        self.cross_attn_center_to_left = FSDPCompatibleMultiheadAttention(
+        self.cross_attn_center_to_left = DeepSpeedCompatibleMultiheadAttention(
             embed_dim=dim,
             num_heads=num_heads,
             dropout=attn_dropout_value,
@@ -71,7 +71,7 @@ class CrossViewTransformerLayer(nn.Module):
         )
         
         # Center to Right
-        self.cross_attn_center_to_right = FSDPCompatibleMultiheadAttention(
+        self.cross_attn_center_to_right = DeepSpeedCompatibleMultiheadAttention(
             embed_dim=dim,
             num_heads=num_heads,
             dropout=attn_dropout_value,
@@ -79,7 +79,7 @@ class CrossViewTransformerLayer(nn.Module):
         )
         
         # Right to Left
-        self.cross_attn_right_to_left = FSDPCompatibleMultiheadAttention(
+        self.cross_attn_right_to_left = DeepSpeedCompatibleMultiheadAttention(
             embed_dim=dim,
             num_heads=num_heads,
             dropout=attn_dropout_value,
@@ -87,7 +87,7 @@ class CrossViewTransformerLayer(nn.Module):
         )
         
         # Right to Center
-        self.cross_attn_right_to_center = FSDPCompatibleMultiheadAttention(
+        self.cross_attn_right_to_center = DeepSpeedCompatibleMultiheadAttention(
             embed_dim=dim,
             num_heads=num_heads,
             dropout=attn_dropout_value,

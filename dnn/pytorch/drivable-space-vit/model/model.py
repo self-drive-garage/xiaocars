@@ -3,8 +3,7 @@ import deepspeed
 from deepspeed.ops.adam import FusedAdam
 
 from .ds_modular_vision_transformer import DeepSpeedModularVisionTransformer
-from model.self_supervised_loss import SelfSupervisedLoss
-from model.cosine_scheduler_with_warmup import CosineSchedulerWithWarmup
+from .self_supervised_loss import SelfSupervisedLoss
 
 def get_default_model_config():
     """Return default model configuration"""

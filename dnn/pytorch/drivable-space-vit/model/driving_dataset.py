@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 import pandas as pd
-import random
+
 from pathlib import Path
 import logging
 from PIL import Image
