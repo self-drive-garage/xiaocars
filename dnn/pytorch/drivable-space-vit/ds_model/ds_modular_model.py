@@ -42,7 +42,7 @@ def create_deepspeed_config():
     # Use fixed batch size and gradient accumulation for now
     batch_size = 2  # Per GPU batch size
     grad_accum = 8  # Gradient accumulation steps
-    train_batch_size = batch_size * grad_accum * 4  # Total effective batch size per GPU
+    train_batch_size = batch_size * grad_accum * 16  # Total effective batch size per GPU
     
     # Simple, reliable DeepSpeed configuration
     deepspeed_config = {

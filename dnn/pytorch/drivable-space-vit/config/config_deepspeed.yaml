@@ -36,7 +36,7 @@ dataset:
       max_gap: 0.3
 
 training:
-  # resume: "outputs/deepspeed/checkpoint/latest"
+  resume: "outputs/deepspeed/checkpoint_epoch_*"  # Enable resume - will use latest checkpoint if exists
   lr: 8e-4
   warmup_epochs: 15
   min_lr: 1e-5
@@ -113,7 +113,7 @@ logging:
 
 # DeepSpeed JSON configuration will be generated from this
 deepspeed:
-  train_batch_size: 16  # 2 * 8 accumulation * 1 micro-batch (will be adjusted for 16 GPUs)
+  train_batch_size: 256  # 2 * 8 accumulation * 16 GPUs
   train_micro_batch_size_per_gpu: 2
   gradient_accumulation_steps: 8
   wall_clock_breakdown: false
