@@ -7,6 +7,7 @@ from omegaconf import DictConfig, OmegaConf
 from pathlib import Path
 import datetime
 from torch.utils.tensorboard import SummaryWriter
+import glob
 
 from ds_model.ds_modular_model import (
     create_deepspeed_model_and_engine,
@@ -47,7 +48,7 @@ os.environ["NCCL_IB_DISABLE"] = "1"  # Disable InfiniBand transport
 os.environ["NCCL_P2P_DISABLE"] = "1"  # Disable P2P transfers that might cause issues
 
 # NCCL settings for improved stability
-os.environ["NCCL_TIMEOUT"] = "1800"  # 30 minute timeout (in seconds)
+os.environ["NCCL_TIMEOUT"] = "300"  # 5 minute timeout (in seconds)
 os.environ["NCCL_ASYNC_ERROR_HANDLING"] = "1"  # Enable async error handling
 os.environ["NCCL_BLOCKING_WAIT"] = "1"  # Use blocking wait which can be more stable
 
@@ -162,8 +163,22 @@ def main(cfg: DictConfig):
     # Load checkpoint if resuming
     start_epoch = 0
     if hasattr(cfg.training, 'resume') and cfg.training.resume:
-        checkpoint_dir = cfg.training.resume
-        if os.path.exists(checkpoint_dir):
+        checkpoint_pattern = cfg.training.resume
+        
+        # If the pattern contains wildcards, find matching directories
+        if '*' in checkpoint_pattern:
+            matching_dirs = glob.glob(checkpoint_pattern)
+            if matching_dirs:
+                # Sort by epoch number to get the latest
+                matching_dirs.sort(key=lambda x: int(x.split('_')[-1]) if x.split('_')[-1].isdigit() else 0)
+                checkpoint_dir = matching_dirs[-1]
+            else:
+                checkpoint_dir = None
+                logger.info(f"No checkpoints found matching pattern: {checkpoint_pattern}")
+        else:
+            checkpoint_dir = checkpoint_pattern if os.path.exists(checkpoint_pattern) else None
+            
+        if checkpoint_dir and os.path.exists(checkpoint_dir):
             logger.info(f"Loading checkpoint from {checkpoint_dir}")
             client_state = load_deepspeed_checkpoint(
                 model_engine,
@@ -201,6 +216,10 @@ def main(cfg: DictConfig):
             world_size=world_size
         )
         
+        # Ensure all processes are synchronized before validation
+        if world_size > 1:
+            deepspeed.comm.barrier()
+        
         # Validate
         val_loss = validate_deepspeed(
             model_engine=model_engine,
@@ -211,15 +230,21 @@ def main(cfg: DictConfig):
             rank=rank
         )
         
+        # Ensure all processes are synchronized after validation
+        if world_size > 1:
+            deepspeed.comm.barrier()
+        
         # Step learning rate scheduler if using custom scheduler
         if lr_scheduler and hasattr(lr_scheduler, 'step'):
             lr_scheduler.step()
         
-        # Save checkpoint
-        if rank == 0 and (epoch + 1) % cfg.logging.save_interval == 0:
+        # Save checkpoint (all ranks must participate in DeepSpeed checkpoint saving)
+        if (epoch + 1) % cfg.logging.save_interval == 0:
             checkpoint_dir = output_dir / f"checkpoint_epoch_{epoch}"
-            checkpoint_dir.mkdir(parents=True, exist_ok=True)
+            if rank == 0:
+                checkpoint_dir.mkdir(parents=True, exist_ok=True)
             
+            # All ranks must call save_checkpoint for DeepSpeed
             save_deepspeed_checkpoint(
                 model_engine=model_engine,
                 epoch=epoch,
@@ -228,14 +253,22 @@ def main(cfg: DictConfig):
                 model_config=cfg.model,
                 config=OmegaConf.to_container(cfg, resolve=True)
             )
-            logger.info(f"Saved checkpoint to {checkpoint_dir}")
+            
+            if rank == 0:
+                logger.info(f"Saved checkpoint to {checkpoint_dir}")
         
-        # Save best model
-        if rank == 0 and val_loss < best_val_loss:
+        # Save best model (all ranks must participate in DeepSpeed checkpoint saving)
+        if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_checkpoint_dir = output_dir / "best_model"
-            best_checkpoint_dir.mkdir(parents=True, exist_ok=True)
+            if rank == 0:
+                best_checkpoint_dir.mkdir(parents=True, exist_ok=True)
             
+            # Ensure directory exists on all ranks before saving
+            if world_size > 1:
+                deepspeed.comm.barrier()
+            
+            # All ranks must call save_checkpoint for DeepSpeed
             save_deepspeed_checkpoint(
                 model_engine=model_engine,
                 epoch=epoch,
@@ -245,19 +278,42 @@ def main(cfg: DictConfig):
                 additional_data={'best_val_loss': best_val_loss},
                 config=OmegaConf.to_container(cfg, resolve=True)
             )
-            logger.info(f"Saved best model with validation loss {best_val_loss:.6f}")
+            
+            # if rank == 0:
+            #     logger.info(f"Saved best model with validation loss {best_val_loss:.6f}")
         
         # Visualize predictions if configured
-        if rank == 0 and (epoch + 1) % cfg.logging.visualize_every == 0:
-            visualize_dir = output_dir / 'visualizations' / f"epoch_{epoch}"
-            visualize_dir.mkdir(parents=True, exist_ok=True)
-            visualize_predictions_deepspeed(
-                model_engine,
-                val_loader,
-                epoch,
-                cfg.logging.num_viz_samples,
-                str(visualize_dir)
-            )
+        # if (epoch + 1) % cfg.logging.visualize_every == 0:
+        #     logger.info(f"Rank {rank}: Visualization triggered for epoch {epoch}")
+        #     if rank == 0:
+        #         visualize_dir = output_dir / 'visualizations' / f"epoch_{epoch}"
+        #         visualize_dir.mkdir(parents=True, exist_ok=True)
+        #         logger.info(f"Rank 0: Starting visualization, saving to {visualize_dir}")
+        #         visualize_predictions_deepspeed(
+        #             model_engine,
+        #             val_loader,
+        #             epoch,
+        #             cfg.logging.num_viz_samples,
+        #             str(visualize_dir)
+        #         )
+        #         logger.info(f"Rank 0: Completed visualization for epoch {epoch}")
+        #     else:
+        #         logger.info(f"Rank {rank}: Waiting for rank 0 to complete visualization")
+            
+        #     # All processes wait for rank 0 to finish visualization
+        #     if world_size > 1:
+        #         logger.info(f"Rank {rank}: Entering visualization barrier")
+        #         deepspeed.comm.barrier()
+        #         logger.info(f"Rank {rank}: Passed visualization barrier")
+        
+        # Add end-of-epoch logging
+        # logger.info(f"Rank {rank}: Completed epoch {epoch}")
+        
+        # Add barrier at end of epoch to ensure all ranks are synchronized
+        if world_size > 1:
+            # logger.info(f"Rank {rank}: Entering end-of-epoch barrier")
+            deepspeed.comm.barrier()
+            # logger.info(f"Rank {rank}: Passed end-of-epoch barrier")
     
     # Final cleanup
     if writer is not None:
@@ -278,8 +334,30 @@ def train_epoch(model_engine, train_loader, loss_fn, epoch, cfg, writer, rank, w
     log_interval = cfg.logging.log_interval
     total_batches = len(train_loader)
     
+    # Log the number of batches this rank will process
+    if rank == 0:
+        logger.info(f"Training epoch {epoch}: Processing {total_batches} batches")
+    
+    # Synchronize the number of batches across all ranks
+    if world_size > 1:
+        # Get the minimum number of batches across all ranks
+        local_batches = torch.tensor([total_batches], dtype=torch.int32).cuda()
+        torch.distributed.all_reduce(local_batches, op=torch.distributed.ReduceOp.MIN)
+        min_batches = local_batches.item()
+        
+        if total_batches != min_batches:
+            logger.warning(f"Rank {rank}: Batch count mismatch! Local: {total_batches}, Global min: {min_batches}")
+            logger.warning(f"Rank {rank}: Will only process {min_batches} batches to maintain synchronization")
+        
+        total_batches = min_batches
+    
     # Main training loop
     for batch_idx, batch in enumerate(train_loader):
+        # Stop if we've reached the synchronized batch count
+        if batch_idx >= total_batches:
+            logger.info(f"Rank {rank}: Stopping at batch {batch_idx} to maintain synchronization")
+            break
+            
         # Move data to current device (DeepSpeed handles device placement)
         batch = {k: v.cuda() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
         
@@ -317,7 +395,7 @@ def train_epoch(model_engine, train_loader, loss_fn, epoch, cfg, writer, rank, w
         # raise Exception(f"loss: {loss.dtype}")
         model_engine.backward(loss)
         
-        # DeepSpeed step (handles gradient clipping and optimizer step)
+        # DeepSpeed step (handles gradient accumulation and optimizer step internally)
         model_engine.step()
         
         # Update metrics
@@ -342,7 +420,7 @@ def train_epoch(model_engine, train_loader, loss_fn, epoch, cfg, writer, rank, w
                     memory_reserved = torch.cuda.memory_reserved() / 1024**3   # GB
                     writer.add_scalar('train/memory_allocated_gb', memory_allocated, global_step)
                     writer.add_scalar('train/memory_reserved_gb', memory_reserved, global_step)
-    
+        
     # Calculate average loss
     avg_loss = total_loss / num_batches if num_batches > 0 else 0
     
@@ -361,17 +439,35 @@ def train_epoch(model_engine, train_loader, loss_fn, epoch, cfg, writer, rank, w
         if writer is not None:
             writer.add_scalar('train/epoch_loss', avg_loss, epoch)
     
+    # Log that training epoch is complete for debugging
+    if rank == 0:
+        logger.info(f"Completed training epoch {epoch}")
+    
+    # Ensure all processes complete the epoch before returning
+    if world_size > 1:
+        deepspeed.comm.barrier()
+    
     return avg_loss
 
 def validate_deepspeed(model_engine, loader, loss_fn, epoch, config, rank):
     """Validate model using DeepSpeed engine"""
+    if rank == 0:
+        logger.info(f"Starting validation for epoch {epoch}")
     model_engine.eval()
     
     total_loss = 0.0
     num_batches = 0
     
+    # Get total batches and synchronize across ranks
+    total_batches = len(loader)
+    
     with torch.no_grad():
         for batch_idx, batch in enumerate(loader):
+            # Stop if we've reached the synchronized batch count
+            if batch_idx >= total_batches:
+                logger.info(f"Rank {rank}: Stopping validation at batch {batch_idx} to maintain synchronization")
+                break
+                
             # Move data to device
             batch = {k: v.cuda() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
             
@@ -391,12 +487,17 @@ def validate_deepspeed(model_engine, loader, loss_fn, epoch, config, rank):
             
             total_loss += loss_value
             num_batches += 1
+            
+            # Log progress every 50 batches
+            if rank == 0 and (batch_idx + 1) % 50 == 0:
+                logger.info(f"Validation progress: {batch_idx + 1}/{len(loader)} batches")
     
     # Calculate average loss
     avg_loss = total_loss / num_batches if num_batches > 0 else 0
     
+    logger.info(f"Rank {rank}: Completed validation loop, syncing loss...")
+    
     # Synchronize validation loss across processes
-    world_size = deepspeed.comm.get_world_size()
     if world_size > 1:
         avg_loss_tensor = torch.tensor([avg_loss]).cuda()
         deepspeed.comm.all_reduce(avg_loss_tensor)
@@ -405,17 +506,23 @@ def validate_deepspeed(model_engine, loader, loss_fn, epoch, config, rank):
     if rank == 0:
         logger.info(f"Epoch {epoch} | Validation Loss: {avg_loss:.6f}")
     
+    logger.info(f"Rank {rank}: Validation complete for epoch {epoch}")
+    
     return avg_loss
 
 def visualize_predictions_deepspeed(model_engine, val_loader, epoch, num_samples, output_dir):
     """Visualize predictions using DeepSpeed model engine"""
+    logger.info(f"visualize_predictions_deepspeed: Starting visualization for {num_samples} samples")
     model_engine.eval()
     
+    samples_processed = 0
     with torch.no_grad():
         for batch_idx, batch in enumerate(val_loader):
             if batch_idx >= num_samples:
                 break
-                
+            
+            logger.info(f"visualize_predictions_deepspeed: Processing batch {batch_idx}")
+            
             # Move data to device
             batch = {k: v.cuda() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
             
@@ -425,6 +532,9 @@ def visualize_predictions_deepspeed(model_engine, val_loader, epoch, num_samples
             # Save visualizations (implement based on your visualization needs)
             # This is a placeholder - you'll need to implement the actual visualization logic
             logger.info(f"Generated visualization {batch_idx} for epoch {epoch}")
+            samples_processed += 1
+    
+    logger.info(f"visualize_predictions_deepspeed: Completed {samples_processed} visualizations")
 
 def parse_deepspeed_args():
     """Parse and remove DeepSpeed-specific arguments before Hydra processes them"""

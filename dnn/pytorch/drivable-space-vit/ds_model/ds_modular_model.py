@@ -51,6 +51,23 @@ def create_deepspeed_config():
         "gradient_accumulation_steps": grad_accum,
         "wall_clock_breakdown": False,
         
+        # Explicitly set steps_per_print to avoid any automatic behavior
+        "steps_per_print": 10000000,  # Very large number
+        
+        # Explicitly disable checkpoint saving
+        "checkpoint": {
+            "tag_validation": "ignore",
+            "load_universal": False,
+            "use_node_local_storage": False,
+            "parallel_write": {
+                "enabled": False
+            }
+        },
+        
+        # Disable automatic checkpoint saving intervals
+        "save_interval": 10000000,  # Very large number
+        "save_steps": -1,  # Negative value disables
+        
         # ZeRO-3 configuration with safe defaults
         "zero_optimization": {
             "stage": 3,
@@ -77,6 +94,10 @@ def create_deepspeed_config():
         
         # Gradient clipping
         "gradient_clipping": 1.0,
+        
+        # Disable all automatic behaviors
+        "dump_state": False,
+        "load_universal_checkpoint": False,
     }
     
     return deepspeed_config

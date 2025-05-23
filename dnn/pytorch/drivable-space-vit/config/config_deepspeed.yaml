@@ -101,7 +101,7 @@ logging:
   log_interval: 10
   save_interval: 5
   eval_interval: 1
-  visualize_every: 5
+  visualize_every: 1000  # Temporarily disabled by setting to very large value
   num_viz_samples: 5
   visualize_sequences: true
   
