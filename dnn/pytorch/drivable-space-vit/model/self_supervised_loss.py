@@ -24,6 +24,13 @@ class SelfSupervisedLoss(nn.Module):
         logger.debug(f"SelfSupervisedLoss::__init__ - Initialized with weights: reconstruction={reconstruction_weight}, consistency={consistency_weight}, future={future_weight}")
         logger.debug(f"ACTUAL WEIGHTS BEING USED: recon={self.reconstruction_weight}, consistency={self.consistency_weight}, future={self.future_weight}")
     
+    def _to_target_dtype(self, value, target_tensor):
+        """Convert a scalar value to match the dtype and device of target tensor"""
+        if isinstance(value, torch.Tensor):
+            return value.to(target_tensor.dtype).to(target_tensor.device)
+        else:
+            return torch.tensor(value, dtype=target_tensor.dtype, device=target_tensor.device)
+    
     def forward(self, outputs, batch):
         # Log available keys in outputs
         logger.debug(f"SelfSupervisedLoss::forward - Available keys in outputs: {list(outputs.keys())}")
@@ -31,8 +38,15 @@ class SelfSupervisedLoss(nn.Module):
         
         loss_dict = {}
         
+        # Determine the target dtype from model outputs for consistency
+        sample_output = next(iter(outputs.values()))
+        if isinstance(sample_output, torch.Tensor):
+            target_dtype = sample_output.dtype
+        else:
+            target_dtype = torch.float32  # fallback
+        
         # We'll accumulate real losses here
-        total_loss = 0
+        total_loss = torch.tensor(0.0, dtype=target_dtype, device=sample_output.device)
             
         # Get the last frame from the sequence for reconstruction target
         left_target = batch['left_images'][:, -1]  # (B, C, H, W)
@@ -44,6 +58,14 @@ class SelfSupervisedLoss(nn.Module):
         center_recon = outputs['center_reconstructed']
         right_recon = outputs['right_reconstructed']
         
+        # Ensure targets have the same dtype as reconstructions for DeepSpeed fp16 compatibility
+        if left_recon.dtype != left_target.dtype:
+            left_target = left_target.to(left_recon.dtype)
+        if center_recon.dtype != center_target.dtype:
+            center_target = center_target.to(center_recon.dtype)
+        if right_recon.dtype != right_target.dtype:
+            right_target = right_target.to(right_recon.dtype)
+        
         # Then use these normalized values
         left_recon_loss = self.reconstruction_loss(left_recon, left_target)
         center_recon_loss = self.reconstruction_loss(center_recon, center_target)
@@ -52,9 +74,9 @@ class SelfSupervisedLoss(nn.Module):
         # Log individual reconstruction losses
         logger.debug(f"SelfSupervisedLoss::forward - Individual reconstruction losses - left: {left_recon_loss.item()}, center: {center_recon_loss.item()}, right: {right_recon_loss.item()}")
         
-        # Average the reconstruction loss across all three views
-        recon_loss = (left_recon_loss + center_recon_loss + right_recon_loss) / 3.0
-        total_loss += self.reconstruction_weight * recon_loss
+        # Average the reconstruction loss across all three views (use tensor division for dtype consistency)
+        recon_loss = (left_recon_loss + center_recon_loss + right_recon_loss) / torch.tensor(3.0, dtype=target_dtype, device=sample_output.device)
+        total_loss += torch.tensor(self.reconstruction_weight, dtype=target_dtype, device=sample_output.device) * recon_loss
         loss_dict['reconstruction_loss'] = recon_loss.item()
 
         # Calculate pairwise cosine similarities and convert to loss (1 - similarity)
@@ -73,23 +95,14 @@ class SelfSupervisedLoss(nn.Module):
             right_recon.reshape(right_recon.size(0), -1)
         ).mean()
         
-        left_center_consistency = 1.0 - left_center_sim
-        center_right_consistency = 1.0 - center_right_sim
-        left_right_consistency = 1.0 - left_right_sim
+        left_center_consistency = self._to_target_dtype(1.0, sample_output) - left_center_sim
+        center_right_consistency = self._to_target_dtype(1.0, sample_output) - center_right_sim
+        left_right_consistency = self._to_target_dtype(1.0, sample_output) - left_right_sim
         
         # Average the consistency losses
-        consistency = (left_center_consistency + center_right_consistency + left_right_consistency) / 3.0
-        total_loss += self.consistency_weight * consistency            
+        consistency = (left_center_consistency + center_right_consistency + left_right_consistency) / self._to_target_dtype(3.0, sample_output)
+        total_loss += self._to_target_dtype(self.consistency_weight, sample_output) * consistency            
         loss_dict['consistency_loss'] = consistency.item()
-
-        # Future prediction loss 
-        # future_pred = outputs['future_prediction']  # Expected shape [B, 3*embed_dim]
-        # future_target = batch['future_features']    # Target future features
-        
-        # # Now compute the loss with matching dimensions
-        # future_loss = self.future_prediction_loss(future_pred, future_target)
-        # total_loss += self.future_weight * future_loss
-        # loss_dict['future_prediction_loss'] = future_loss.item()
 
         logger.debug(f"RAW LOSSES: recon={recon_loss.item()}, consistency={consistency.item()}")
 
@@ -105,6 +118,14 @@ class SelfSupervisedLoss(nn.Module):
             loss_dict['total_loss'] = float(total_loss) if total_loss is not None else 0.0
             logger.debug(f"SelfSupervisedLoss::forward - Final total loss (non-tensor): {loss_dict['total_loss']}")
             
+        # Ensure loss is in the same dtype as model outputs for DeepSpeed compatibility
+        if 'left_reconstructed' in outputs:
+            ref_tensor = outputs['left_reconstructed']
+            if isinstance(total_loss, torch.Tensor) and total_loss.dtype != ref_tensor.dtype:
+                total_loss = total_loss.to(ref_tensor.dtype)
+        
+        # raise Exception(f"sample_output: {total_loss.dtype}")
+
         return total_loss, loss_dict
     
     def _get_device(self, outputs):
