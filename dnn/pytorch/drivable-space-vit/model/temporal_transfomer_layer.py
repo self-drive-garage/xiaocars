@@ -43,7 +43,7 @@ class TemporalTransformerLayer(nn.Module):
         self.norm2 = nn.LayerNorm(dim)
         
         # Temporal self-attention
-        self.attn = FSDPCompatibleMultiheadAttention(
+        self.attn = DeepSpeedCompatibleMultiheadAttention(
             embed_dim=dim,
             num_heads=num_heads,
             dropout=attn_dropout_value,

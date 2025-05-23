@@ -59,7 +59,7 @@ run_training() {
     # Launch training with DeepSpeed - use all 16 GPUs
     deepspeed --include localhost:0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 \
         --master_port=$MASTER_PORT \
-        ds_train.py \
+        train.py \
         --config-path=config \
         --config-name=$CONFIG_NAME \
         hydra.job.chdir=false \
@@ -76,7 +76,7 @@ if [ "$1" = "--background" ] || [ "$1" = "-b" ]; then
     # Run training in background using nohup
     nohup deepspeed --include localhost:0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 \
         --master_port=$MASTER_PORT \
-        ds_train.py \
+        train.py \
         --config-path=config \
         --config-name=$CONFIG_NAME \
         hydra.job.chdir=false \
