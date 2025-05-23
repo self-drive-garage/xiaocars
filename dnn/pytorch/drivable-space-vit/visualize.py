@@ -10,6 +10,7 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+import deepspeed
 
 from model.modular_model import load_model_from_checkpoint
 from model.driving_dataset import DrivingDataset, create_dataloader
@@ -20,6 +21,151 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
 )
 logger = logging.getLogger(__name__)
+
+
+def load_deepspeed_checkpoint(checkpoint_path, device, config):
+    """Load a DeepSpeed checkpoint for inference
+    
+    Args:
+        checkpoint_path: Path to the DeepSpeed checkpoint file
+        device: Device to load the model on
+        config: Model configuration
+        
+    Returns:
+        model: The loaded model
+        checkpoint_info: Dictionary with checkpoint metadata
+    """
+    # Import the model creation function
+    from model.modular_model import create_modular_model
+    
+    checkpoint_path = Path(checkpoint_path)
+    
+    # Check if this is a consolidated checkpoint (from zero_to_fp32.py)
+    if checkpoint_path.name == 'pytorch_model.bin' and checkpoint_path.exists():
+        logger.info("Loading consolidated checkpoint from zero_to_fp32.py")
+        try:
+            # Create model
+            model = create_modular_model(config=config)
+            
+            # Load the consolidated checkpoint - it contains the state dict directly
+            state_dict = torch.load(checkpoint_path, map_location=device)
+            
+            # The consolidated checkpoint contains the model parameters directly
+            model.load_state_dict(state_dict, strict=False)
+            
+            checkpoint_info = {
+                'epoch': 'unknown (consolidated)',
+                'loss': 'unknown (consolidated)'
+            }
+            
+            logger.info(f"Successfully loaded consolidated checkpoint with {len(state_dict)} parameters")
+            
+        except Exception as e:
+            logger.error(f"Failed to load consolidated checkpoint: {e}")
+            raise RuntimeError(f"Unable to load consolidated checkpoint: {checkpoint_path}")
+    
+    else:
+        # Handle sharded DeepSpeed checkpoints
+        # Create the model first
+        model = create_modular_model(config=config)
+        
+        # For DeepSpeed inference, we need to use init_inference
+        # This will handle gathering the partitioned parameters
+        try:
+            # Try to infer checkpoint directory from the file path
+            checkpoint_dir = checkpoint_path.parent
+            
+            # Initialize DeepSpeed for inference
+            # This will automatically gather the partitioned weights
+            model = deepspeed.init_inference(
+                model,
+                checkpoint=str(checkpoint_dir),
+                replace_with_kernel_inject=False,  # Don't use kernel injection for visualization
+                tensor_parallel={"tp_size": 1},  # No tensor parallelism for inference
+                dtype=torch.float16 if device.type == 'cuda' else torch.float32,
+            )
+            
+            # Get the module from DeepSpeed engine
+            model = model.module
+            
+            # Try to load checkpoint metadata if available
+            checkpoint_info = {
+                'epoch': 'unknown',
+                'loss': 'unknown'
+            }
+            
+            # Look for client state file
+            client_state_file = checkpoint_dir / 'checkpoint_state.json'
+            if client_state_file.exists():
+                import json
+                with open(client_state_file, 'r') as f:
+                    client_state = json.load(f)
+                    checkpoint_info['epoch'] = client_state.get('epoch', 'unknown')
+                    checkpoint_info['loss'] = client_state.get('loss', 'unknown')
+            
+            logger.info(f"Successfully loaded DeepSpeed checkpoint using init_inference")
+            
+        except Exception as e:
+            logger.warning(f"Failed to load with init_inference: {e}")
+            logger.info("Attempting alternative loading method...")
+            
+            try:
+                # Alternative: Try using deepspeed's zero_to_fp32 utilities
+                from deepspeed.utils.zero_to_fp32 import load_state_dict_from_zero_checkpoint
+                
+                # Create model
+                model = create_modular_model(config=config)
+                
+                # Load from zero checkpoint
+                checkpoint_dir = checkpoint_path.parent.parent  # Go up to the checkpoint root
+                model = load_state_dict_from_zero_checkpoint(model, str(checkpoint_dir))
+                
+                checkpoint_info = {
+                    'epoch': 'unknown', 
+                    'loss': 'unknown'
+                }
+                
+                logger.info(f"Successfully loaded using zero_to_fp32 utilities")
+                
+            except Exception as e2:
+                logger.error(f"Failed to load with zero_to_fp32: {e2}")
+                
+                # Last resort: Try direct state dict loading if it's a consolidated checkpoint
+                try:
+                    # Create model
+                    model = create_modular_model(config=config)
+                    
+                    # Load the checkpoint
+                    checkpoint = torch.load(checkpoint_path, map_location=device)
+                    
+                    # Handle different checkpoint formats
+                    if 'module' in checkpoint:
+                        state_dict = checkpoint['module']
+                    elif 'model' in checkpoint:
+                        state_dict = checkpoint['model']
+                    elif 'model_state_dict' in checkpoint:
+                        state_dict = checkpoint['model_state_dict']
+                    else:
+                        # Assume the checkpoint is the state dict directly
+                        state_dict = checkpoint
+                    
+                    model.load_state_dict(state_dict, strict=False)
+                    
+                    checkpoint_info = {
+                        'epoch': checkpoint.get('epoch', 'unknown'),
+                        'loss': checkpoint.get('loss', 'unknown')
+                    }
+                    
+                    logger.info(f"Successfully loaded using direct state dict")
+                    
+                except Exception as e3:
+                    logger.error(f"All loading methods failed: {e3}")
+                    raise RuntimeError(f"Unable to load DeepSpeed checkpoint: {checkpoint_path}")
+    
+    model.to(device)
+    model.eval()
+    
+    return model, checkpoint_info
 
 
 def visualize_predictions(model, data_loader, device, output_dir, num_samples=10, rank=0):
@@ -89,9 +235,29 @@ def visualize_predictions(model, data_loader, device, output_dir, num_samples=10
                 
                 # Plot drivable space prediction if available
                 if drivable_space is not None:
-                    drivable_map = drivable_space[i].squeeze().cpu().numpy()
-                    axes[0, 1].imshow(drivable_map, cmap='viridis')
-                    axes[0, 1].set_title('Drivable Space Prediction')
+                    # Get the original drivable space map
+                    drivable_map = drivable_space[i].squeeze()  # Remove channel dimension if present
+                    
+                    # Get the input image size for reference
+                    input_height, input_width = center_img.shape[-2:]
+                    
+                    # Check if downsampling is needed (if output is larger than input)
+                    if drivable_map.shape[0] > input_height or drivable_map.shape[1] > input_width:
+                        # Downsample to match input image size for better visualization
+                        drivable_map_vis = torch.nn.functional.interpolate(
+                            drivable_map.unsqueeze(0).unsqueeze(0),
+                            size=(input_height, input_width),
+                            mode='bilinear',
+                            align_corners=False
+                        )[0, 0].cpu().numpy()
+                        
+                        axes[0, 1].imshow(drivable_map_vis, cmap='viridis')
+                        axes[0, 1].set_title(f'Drivable Space Prediction\n(downsampled from {drivable_map.shape[0]}x{drivable_map.shape[1]})')
+                    else:
+                        # Use original size if not larger than input
+                        axes[0, 1].imshow(drivable_map.cpu().numpy(), cmap='viridis')
+                        axes[0, 1].set_title('Drivable Space Prediction')
+                    
                     axes[0, 1].axis('off')
                 
                 # Plot reconstruction if available (denormalized)
@@ -202,11 +368,27 @@ def main():
         device = torch.device('cpu')
         logger.info(f"Using CPU")
     
+    # Check if this is a DeepSpeed checkpoint
+    checkpoint_path = Path(args.checkpoint)
+    is_deepspeed_checkpoint = (
+        'zero_pp_rank' in checkpoint_path.name or 
+        'mp_rank' in checkpoint_path.name or
+        # Check if it's a consolidated checkpoint in a DeepSpeed directory structure
+        (checkpoint_path.name == 'pytorch_model.bin' and 
+         'checkpoint_epoch' in str(checkpoint_path.parent.parent) and
+         (checkpoint_path.parent.parent / 'zero_to_fp32.py').exists())
+    )
+    
     # Load model from checkpoint
     logger.info(f"Loading model from checkpoint: {args.checkpoint}")
     try:
-        model, checkpoint = load_model_from_checkpoint(args.checkpoint, device=device, config=config)
-        logger.info(f"Model loaded from epoch {checkpoint['epoch']} with loss {checkpoint['loss']:.6f}")
+        if is_deepspeed_checkpoint:
+            logger.info("Detected DeepSpeed checkpoint format")
+            model, checkpoint_info = load_deepspeed_checkpoint(args.checkpoint, device=device, config=config)
+            logger.info(f"Model loaded from DeepSpeed checkpoint - epoch {checkpoint_info['epoch']}, loss {checkpoint_info['loss']}")
+        else:
+            model, checkpoint = load_model_from_checkpoint(args.checkpoint, device=device, config=config)
+            logger.info(f"Model loaded from epoch {checkpoint['epoch']} with loss {checkpoint['loss']:.6f}")
     except Exception as e:
         logger.error(f"Failed to load checkpoint: {e}")
         sys.exit(1)
