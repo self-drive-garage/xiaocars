@@ -1,0 +1,71 @@
+# configs/config.yaml
+# Main configuration file for Drivable Space Transformer training
+
+defaults:
+  - _self_
+
+# Model configuration
+model:
+  img_size: [512, 1024]  # Height, Width
+  patch_size: 16
+  in_channels: 3
+  num_classes: 3  # non-drivable, drivable, uncertain
+  embed_dim: 384
+  depth: 6  # Number of transformer blocks
+  num_heads: 6
+  mlp_ratio: 4.0
+  qkv_bias: true
+  drop_rate: 0.0
+  attn_drop_rate: 0.0
+  drop_path_rate: 0.1
+
+# Data configuration
+data:
+  parquet_dir: "/datasets/cityscapes_parquet"
+  num_workers: 4
+  
+# Training configuration
+training:
+  device: "cuda"
+  multi_gpu: false
+  num_epochs: 100
+  batch_size: 8
+  mixed_precision: true
+  seed: 42
+  output_dir: "./outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}"
+  resume: false
+  resume_checkpoint: "checkpoint_epoch_0050.pth"
+
+# Optimizer configuration
+optimizer:
+  name: "adamw"  # Options: adamw, sgd
+  lr: 1e-4
+  weight_decay: 0.05
+  beta1: 0.9
+  beta2: 0.999
+  # SGD specific
+  momentum: 0.9
+
+# Learning rate scheduler
+scheduler:
+  name: "cosine"  # Options: cosine, step, none
+  min_lr: 1e-6
+  # Step scheduler specific
+  step_size: 30
+  gamma: 0.1
+
+# Logging configuration
+logging:
+  use_wandb: false
+  project_name: "drivable-space-transformer"
+  run_name: "cityscapes-${model.patch_size}patch-${model.depth}depth"
+
+# Hydra configuration
+hydra:
+  run:
+    dir: ${training.output_dir}
+  sweep:
+    dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}
+  job:
+    chdir: true
